@@ -64,22 +64,22 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, EmailAuthProvider, linkWithCredential } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, query, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-		import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-analytics.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         
         // Attiva il logging per facilitare il debug
         setLogLevel('Debug');
         
         // --- INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE (da Passo 1.2) ---
         // Se non la incolli, l'app NON funzionerà con la sincronizzazione cloud.
-		const FIREBASE_CONFIG = {
-			apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
-			authDomain: "flashcard-9d034.firebaseapp.com",
-			projectId: "flashcard-9d034",
-			storageBucket: "flashcard-9d034.firebasestorage.app",
-			messagingSenderId: "779697153912",
-			appId: "1:779697153912:web:163d564cd9dba40d338a8d",
-			measurementId: "G-6LWH9W8YEL"
-		  };
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
+    authDomain: "flashcard-9d034.firebaseapp.com",
+    projectId: "flashcard-9d034",
+    storageBucket: "flashcard-9d034.firebasestorage.app",
+    messagingSenderId: "779697153912",
+    appId: "1:779697153912:web:163d564cd9dba40d338a8d",
+    measurementId: "G-6LWH9W8YEL"
+  };
 
         const appId = FIREBASE_CONFIG.projectId;
         const firebaseConfig = FIREBASE_CONFIG;
@@ -89,7 +89,10 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
-		const analytics = getAnalytics(app);
+        
+        // Inizializzazione Analytics per evitare l'errore se la config la include
+        const analytics = getAnalytics(app); 
+
 
         // Espone le funzioni e variabili necessarie
         // Le funzioni di Firestore vengono esposte direttamente per facilità d'uso nel blocco di script principale
