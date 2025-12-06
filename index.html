@@ -64,14 +64,14 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, EmailAuthProvider, linkWithCredential } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, query, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js"; // NUOVA IMPORTAZIONE
         
         // Attiva il logging per facilitare il debug
         setLogLevel('Debug');
         
         // --- INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE (da Passo 1.2) ---
         // Se non la incolli, l'app NON funzionerà con la sincronizzazione cloud.
-  const FIREBASE_CONFIG = {
+          const FIREBASE_CONFIG = {
     apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
     authDomain: "flashcard-9d034.firebaseapp.com",
     projectId: "flashcard-9d034",
@@ -101,7 +101,9 @@
             onSnapshot, getDoc, 
             EmailAuthProvider, linkWithCredential, 
             createUserWithEmailAndPassword, signInWithEmailAndPassword,
-            collection, doc, query, setDoc
+            collection, doc, query, setDoc,
+            // Espone anche le funzioni di accesso/token che erano la causa dell'errore
+            signInAnonymously, signInWithCustomToken
         };
     </script>
 
@@ -743,18 +745,15 @@
             db = firebaseApp.db;
             auth = firebaseApp.auth;
             
-            // Espone le funzioni di Firestore necessarie per le utility
-            // **ATTENZIONE: Le funzioni di Firestore sono già esposte in window.firebaseApp dal blocco module.**
-            // Rimuoviamo la ridefinizione qui per evitare ReferenceErrors.
-
             // Tentativo di login (usa token se disponibile, altrimenti anonimo)
             const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
             
             try {
+                // CORREZIONE CHIAVE: Utilizzare le funzioni esposte nel modulo, passando l'oggetto auth
                 if (initialAuthToken) {
-                    await auth.signInWithCustomToken(auth, initialAuthToken);
+                    await firebaseApp.signInWithCustomToken(auth, initialAuthToken);
                 } else {
-                    await auth.signInAnonymously(auth);
+                    await firebaseApp.signInAnonymously(auth);
                 }
             } catch (error) {
                 console.error("Errore di autenticazione Firebase:", error);
