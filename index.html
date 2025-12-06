@@ -50,6 +50,7 @@
             <button onclick="showView('review')" id="nav-review" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-blue-100 bg-blue-500 text-white">Ripasso Giornaliero</button>
             <button onclick="showView('create')" id="nav-create" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Crea Nuova Carta</button>
             <button onclick="showView('stats')" id="nav-stats" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Riepilogo & Statistiche</button>
+            <button onclick="showView('auth')" id="nav-auth" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-yellow-100 text-yellow-700">Login/Sync</button>
         </nav>
 
         <!-- Area Contenuto Dinamico -->
@@ -60,38 +61,35 @@
     <!-- Firebase Imports -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, EmailAuthProvider, linkWithCredential } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, query, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Attiva il logging per facilitare il debug
         setLogLevel('Debug');
         
-	    // Import the functions you need from the SDKs you need
-	    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-	    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-analytics.js";
-	    // TODO: Add SDKs for Firebase products that you want to use
-	    // https://firebase.google.com/docs/web/setup#available-libraries
-	    
-	    // Your web app's Firebase configuration
-	    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-	    const firebaseConfig = {
-		  apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
-		  authDomain: "flashcard-9d034.firebaseapp.com",
-		  projectId: "flashcard-9d034",
-		  storageBucket: "flashcard-9d034.firebasestorage.app",
-		  messagingSenderId: "779697153912",
-		  appId: "1:779697153912:web:163d564cd9dba40d338a8d",
-		  measurementId: "G-6LWH9W8YEL"
-	    };
+        // --- INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE (da Passo 1.2) ---
+        // Se non la incolli, l'app NON funzionerà con la sincronizzazione cloud.
+        const FIREBASE_CONFIG = {
+            apiKey: "IL_TUO_API_KEY_OTTENUTA_DALLA_CONSOLE",
+            authDomain: "IL_TUO_AUTH_DOMAIN",
+            projectId: "IL_TUO_PROJECT_ID", 
+            storageBucket: "IL_TUO_STORAGE_BUCKET",
+            messagingSenderId: "IL_TUO_MESSAGING_SENDER_ID",
+            appId: "IL_TUO_APP_ID"
+        };
 
-	    // Initialize Firebase
-	    const app = initializeApp(firebaseConfig);
-	    const analytics = getAnalytics(app);
+        const appId = FIREBASE_CONFIG.projectId;
+        const firebaseConfig = FIREBASE_CONFIG;
+        const initialAuthToken = null;
+
+        // Inizializzazione Firebase
+        const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
 
-        window.firebaseApp = { db, auth, onSnapshot }; // Esponi per l'uso nello script principale
+        // Espone le funzioni e variabili necessarie
+        window.firebaseApp = { db, auth, onSnapshot, getDoc, EmailAuthProvider, linkWithCredential, createUserWithEmailAndPassword, signInWithEmailAndPassword };
     </script>
 
     <!-- Script JavaScript Principale -->
@@ -107,6 +105,7 @@
         let auth;
         let userId = null;
         let isAuthReady = false;
+        let isAnonymous = false; // Nuovo stato per tracciare l'utente anonimo
 
         let allCards = [];
         let dueCards = [];
@@ -149,46 +148,39 @@
 
         // --- LOGICA FIREBASE FIRESTORE ---
 
-        /** Funzione per ottenere il riferimento alla collezione flashcards dell'utente corrente */
         function getCardsCollectionRef(database, currentUserId) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            return collection(database, 'artifacts', appId, 'users', currentUserId, STORE_NAME);
+            const appId = firebaseApp.FIREBASE_CONFIG ? firebaseApp.FIREBASE_CONFIG.projectId : 'default-app-id';
+            return firebaseApp.collection(database, 'artifacts', appId, 'users', currentUserId, STORE_NAME);
         }
 
-        /** Funzione per ottenere il riferimento al documento delle statistiche dell'utente corrente */
         function getStatsDocRef(database, currentUserId) {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            return doc(database, 'artifacts', appId, 'users', currentUserId, 'stats', STATS_DOC_ID);
+            const appId = firebaseApp.FIREBASE_CONFIG ? firebaseApp.FIREBASE_CONFIG.projectId : 'default-app-id';
+            return firebaseApp.doc(database, 'artifacts', appId, 'users', currentUserId, 'stats', STATS_DOC_ID);
         }
         
-        /** Salva o aggiorna una singola carta nel cloud */
         async function saveCard(card) {
             if (!userId) {
                 console.error("Tentativo di salvare la carta senza userId. Dati non salvati.");
                 return;
             }
             try {
-                // setDoc crea o sovrascrive il documento con l'ID specificato (card.id)
-                await setDoc(doc(getCardsCollectionRef(db, userId), String(card.id)), card);
+                await firebaseApp.setDoc(firebaseApp.doc(getCardsCollectionRef(db, userId), String(card.id)), card);
             } catch (error) {
                 console.error("Errore nel salvataggio della carta in Firestore:", error);
                 throw error;
             }
         }
 
-        /** Salva le statistiche globali dell'utente */
         async function saveStats() {
             if (!userId) return;
             try {
-                // setDoc con { merge: true } aggiorna solo i campi modificati
-                await setDoc(getStatsDocRef(db, userId), stats, { merge: true });
+                await firebaseApp.setDoc(getStatsDocRef(db, userId), stats, { merge: true });
             } catch (error) {
                 console.error("Errore nel salvataggio delle statistiche in Firestore:", error);
                 throw error;
             }
         }
         
-        /** Carica le statistiche (una tantum, per inizializzazione) */
         async function loadStats() {
             if (!userId) return;
             try {
@@ -202,18 +194,20 @@
             }
         }
 
-        /** Abilita l'ascolto in tempo reale dei dati delle flashcard */
+        let unsubscribeCards = null;
+
         function setupCardListener() {
+            if (unsubscribeCards) {
+                unsubscribeCards(); // Pulisce il listener precedente
+            }
             if (!userId || !isAuthReady) return;
 
-            const cardsQuery = query(getCardsCollectionRef(db, userId));
+            const cardsQuery = firebaseApp.query(getCardsCollectionRef(db, userId));
 
-            // onSnapshot gestisce la prima lettura e gli aggiornamenti successivi
-            const unsubscribe = firebaseApp.onSnapshot(cardsQuery, (snapshot) => {
+            unsubscribeCards = firebaseApp.onSnapshot(cardsQuery, (snapshot) => {
                 allCards = [];
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    // Assicurati che dataDiProssimoRipasso sia un numero (timestamp)
                     data.dataDiProssimoRipasso = data.dataDiProssimoRipasso || 0; 
                     allCards.push(data);
                 });
@@ -226,7 +220,6 @@
 
                 stats.totalCards = allCards.length;
 
-                // Forza il re-rendering della vista corrente con i nuovi dati
                 if (currentView === 'review' || currentView === 'stats') {
                     showView(currentView);
                 }
@@ -236,24 +229,29 @@
                 console.error("Errore onSnapshot:", error);
                 alertMessage("Errore di sincronizzazione dati: controllare la console.", 'danger');
             });
-
-            return unsubscribe; 
         }
 
         // --- GESTIONE VISTE E FLUSSO APPLICAZIONE ---
 
-        /** Gestisce il cambio di vista */
         function showView(viewName) {
             currentView = viewName;
             const contentDiv = document.getElementById('app-content');
             
             document.querySelectorAll('nav button').forEach(btn => {
-                if (btn.id === `nav-${viewName}`) {
-                    btn.classList.remove('bg-gray-200', 'text-gray-700', 'hover:bg-gray-300');
-                    btn.classList.add('bg-blue-500', 'text-white', 'hover:bg-blue-600');
-                } else {
-                    btn.classList.remove('bg-blue-500', 'text-white', 'hover:bg-blue-600');
-                    btn.classList.add('bg-gray-200', 'text-gray-700', 'hover:bg-gray-300');
+                const isSelected = btn.id === `nav-${viewName}`;
+                btn.classList.toggle('bg-blue-500', isSelected);
+                btn.classList.toggle('text-white', isSelected);
+                btn.classList.toggle('hover:bg-blue-600', isSelected);
+                btn.classList.toggle('bg-gray-200', !isSelected && btn.id !== 'nav-auth');
+                btn.classList.toggle('text-gray-700', !isSelected && btn.id !== 'nav-auth');
+                
+                // Stile speciale per il pulsante Auth
+                if (btn.id === 'nav-auth') {
+                    btn.classList.toggle('bg-yellow-400', isSelected);
+                    btn.classList.toggle('text-gray-800', isSelected);
+                    btn.classList.toggle('hover:bg-yellow-500', isSelected);
+                    btn.classList.toggle('text-yellow-700', !isSelected);
+                    btn.classList.toggle('hover:bg-yellow-100', !isSelected);
                 }
             });
 
@@ -274,17 +272,20 @@
                 case 'stats':
                     loadStats().then(renderStatsView);
                     break;
+                case 'auth':
+                    renderAuthView();
+                    break;
                 default:
                     renderReviewView();
             }
         }
+        
+        // A. Schermata di Ripasso Giornaliero - (Nessuna modifica alla logica di rendering)
 
-        // --- 4. INTERFACCIA UTENTE (UI) ---
-
-        // A. Schermata di Ripasso Giornaliero
         let isAnswerVisible = false;
 
         function renderReviewView() {
+            // ... (funzione renderReviewView rimane invariata) ...
             const contentDiv = document.getElementById('app-content');
             
             if (dueCards.length === 0) {
@@ -314,14 +315,12 @@
                     <p class="text-sm text-gray-400">Argomento: <span class="font-semibold text-gray-600">${card.argomento}</span></p>
                 </div>
 
-                <!-- Contenitore della Carta -->
                 <div class="bg-white rounded-xl shadow-lg border-2 border-blue-400 p-6">
                     <div class="flex justify-between items-start mb-4">
                         <h2 class="text-2xl font-bold text-blue-700">Domanda:</h2>
                         <span class="px-3 py-1 bg-blue-100 text-blue-600 text-xs font-semibold rounded-full">Livello ${card.livelloDiRipetizione}</span>
                     </div>
                     
-                    <!-- Contenuto Domanda (Markdown) -->
                     <div id="card-question-content" class="card-content">
                         ${marked.parse(card.domanda)}
                     </div>
@@ -330,13 +329,11 @@
                         Mostra Risposta
                     </button>
                     
-                    <!-- Contenuto Risposta (Nascosto inizialmente) -->
                     <div id="card-answer-container" class="mt-6 border-t pt-6 hidden">
                         <h2 class="text-2xl font-bold text-green-700 mb-4">Risposta:</h2>
                         <div id="card-answer-content" class="card-content border-green-200">
                         </div>
 
-                        <!-- Pulsanti Valutazione -->
                         <div class="flex justify-center space-x-4 mt-8">
                             <button onclick="handleReview(false)" class="flex items-center px-6 py-3 bg-red-500 text-white font-bold rounded-xl shadow-lg hover:bg-red-600 transition duration-150 transform hover:scale-105">
                                 <span class="text-xl mr-2">❌</span> KO (Sbagliata)
@@ -351,8 +348,8 @@
             `;
         }
 
-
-        /** Mostra la risposta e i pulsanti di valutazione */
+        // ... (showAnswer, handleReview, renderCreateView, handleCreateCard, renderStatsView, alertMessage rimangono invariate) ...
+        
         function showAnswer() {
             if (isAnswerVisible) return;
             isAnswerVisible = true;
@@ -363,7 +360,6 @@
             document.getElementById('card-answer-content').innerHTML = marked.parse(card.risposta);
         }
 
-        /** Gestisce la valutazione (OK/KO) e aggiorna la carta nel DB */
         async function handleReview(isCorrect) {
             const card = dueCards[currentCardIndex];
             
@@ -372,7 +368,6 @@
             card.livelloDiRipetizione = srsResult.livelloDiRipetizione;
             card.dataDiProssimoRipasso = srsResult.dataDiProssimoRipasso;
 
-            // Aggiorna le statistiche in memoria
             if (isCorrect) {
                 stats.totalOk++;
             } else {
@@ -388,17 +383,15 @@
             }
 
             try {
-                // Salva le modifiche in Firestore
                 await saveCard(card);
                 await saveStats();
                 
-                // onSnapshot aggiornerà automaticamente la UI. Qui passiamo semplicemente alla prossima carta
                 currentCardIndex++;
                 if (currentCardIndex < dueCards.length) {
                     renderReviewView();
                 } else {
                     currentCardIndex = 0;
-                    showView('review'); // Ricarica la vista (mostrerà il messaggio "Complimenti")
+                    showView('review');
                 }
 
             } catch (e) {
@@ -407,7 +400,6 @@
             }
         }
 
-        // B. Schermata di Creazione Carte
         function renderCreateView() {
             const contentDiv = document.getElementById('app-content');
             
@@ -445,29 +437,13 @@
             `;
         }
         
-        /** Visualizza l'anteprima del Markdown */
-        function previewMarkdown(inputId, previewId) {
-            const input = document.getElementById(inputId).value;
-            const preview = document.getElementById(previewId);
-            
-            if (input.trim() === '') {
-                preview.classList.add('hidden');
-                return;
-            }
-            
-            preview.innerHTML = marked.parse(input); 
-            preview.classList.remove('hidden');
-        }
-
-        /** Gestisce l'invio del modulo di creazione carta */
-        async function handleCreateCard(event) {
+        function handleCreateCard(event) {
             const form = event.target;
             const data = new FormData(form);
 
             const today = new Date();
             const tomorrow = getMidnightTimestamp(addDays(today, INTERVALS[0])); 
 
-            // 2. MODELLO DATI - Struttura dell'Oggetto Carta & Inizializzazione
             const newCard = {
                 id: Date.now(),
                 domanda: data.get('domanda').trim(),
@@ -478,7 +454,7 @@
             };
 
             try {
-                await saveCard(newCard);
+                saveCard(newCard);
                 form.reset();
                 const previewDomanda = document.getElementById('preview-domanda');
                 const previewRisposta = document.getElementById('preview-risposta');
@@ -492,8 +468,8 @@
             }
         }
 
-        // C. Schermata di Riepilogo e Statistiche
         function renderStatsView() {
+            // ... (funzione renderStatsView rimane invariata) ...
             const contentDiv = document.getElementById('app-content');
             const totalAttempts = stats.totalOk + stats.totalKo;
             const successRate = totalAttempts > 0 ? ((stats.totalOk / totalAttempts) * 100).toFixed(1) : '0.0';
@@ -519,19 +495,16 @@
                     <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Riepilogo e Statistiche Globali</h2>
                     
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                        <!-- Stat Box 1: Carte Totali -->
                         <div class="bg-blue-50 p-6 rounded-xl shadow-md border-b-4 border-blue-500 text-center">
                             <p class="text-5xl font-extrabold text-blue-700">${stats.totalCards}</p>
                             <p class="text-gray-600 mt-2">Totale Carte Archiviate</p>
                         </div>
                         
-                        <!-- Stat Box 2: Carte Dovute Oggi -->
                         <div class="bg-red-50 p-6 rounded-xl shadow-md border-b-4 border-red-500 text-center">
                             <p class="text-5xl font-extrabold text-red-700">${dueToday}</p>
                             <p class="text-gray-600 mt-2">Carte da Ripassare Oggi</p>
                         </div>
                         
-                        <!-- Stat Box 3: Percentuale di Successo -->
                         <div class="bg-green-50 p-6 rounded-xl shadow-md border-b-4 border-green-500 text-center">
                             <p class="text-5xl font-extrabold text-green-700">${successRate}%</p>
                             <p class="text-gray-600 mt-2">Percentuale di Successo (OK)</p>
@@ -560,10 +533,8 @@
             `;
         }
 
-        // --- MESSAGGISTICA UI (Sostituto di alert()) ---
-
-        /** Mostra un messaggio di notifica (successo/errore) */
         function alertMessage(message, type) {
+            // ... (funzione alertMessage rimane invariata) ...
             const container = document.getElementById('message-container') || document.getElementById('app-content');
             let bgColor, borderColor, textColor;
 
@@ -601,6 +572,139 @@
                 }
             }, 5000);
         }
+        
+        // --- NUOVA VISTA: AUTENTICAZIONE ---
+
+        function renderAuthView() {
+            const contentDiv = document.getElementById('app-content');
+            
+            let statusText = isAnonymous ? 
+                `<p class="text-orange-600 font-semibold">Stato: Utente Anonimo (Dati salvati solo su questo browser, non portatili)</p>` :
+                `<p class="text-green-600 font-semibold">Stato: Autenticato (Dati sincronizzati su tutti i dispositivi)</p>`;
+
+            let actionButton = isAnonymous ? `
+                <div class="mt-6 border-t pt-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">Porta i Tuoi Dati sul Cloud</h3>
+                    <p class="mb-4 text-gray-600 text-sm">Registrandoti, collegherai tutte le tue flashcard anonime al tuo nuovo account email, permettendo la sincronizzazione su smartphone e altri PC.</p>
+                    <form id="register-anon-form" onsubmit="event.preventDefault(); handleRegisterAnon(event);">
+                        <input type="email" id="link-email" placeholder="Email" required class="w-full px-4 py-2 mb-3 border border-gray-300 rounded-lg">
+                        <input type="password" id="link-password" placeholder="Password (min. 6 caratteri)" required class="w-full px-4 py-2 mb-4 border border-gray-300 rounded-lg">
+                        <button type="submit" class="w-full py-2 bg-yellow-500 text-white font-bold rounded-lg hover:bg-yellow-600 transition duration-150">
+                            Collega e Registra Account
+                        </button>
+                    </form>
+                </div>
+            ` : `
+                <div class="mt-6 border-t pt-6 text-center">
+                    <p class="text-gray-700">Il tuo account è già portatile.</p>
+                    <button onclick="handleLogout()" class="mt-4 px-6 py-2 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition duration-150">
+                        Logout
+                    </button>
+                </div>
+            `;
+
+
+            contentDiv.innerHTML = `
+                <div class="max-w-md mx-auto p-6 bg-white shadow-lg rounded-xl">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Sincronizzazione Account</h2>
+                    <div class="text-center p-4 border border-gray-200 rounded-lg mb-6">
+                        ${statusText}
+                        <p class="text-xs text-gray-500 mt-1">ID Corrente: ${userId}</p>
+                    </div>
+
+                    ${actionButton}
+
+                    <div id="auth-message-container" class="mt-4"></div>
+                    
+                    ${!isAnonymous ? '' : `
+                    <div class="mt-8 border-t pt-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">Accesso/Registrazione</h3>
+                        <p class="mb-4 text-gray-600 text-sm">Se hai già un account su un altro dispositivo, accedi qui sotto per caricare i tuoi dati cloud.</p>
+                        <form id="login-form" onsubmit="event.preventDefault(); handleLogin(event);">
+                            <input type="email" id="login-email" placeholder="Email" required class="w-full px-4 py-2 mb-3 border border-gray-300 rounded-lg">
+                            <input type="password" id="login-password" placeholder="Password" required class="w-full px-4 py-2 mb-4 border border-gray-300 rounded-lg">
+                            <button type="submit" class="w-full py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150">
+                                Accedi
+                            </button>
+                        </form>
+                    </div>
+                    `}
+                </div>
+            `;
+        }
+
+        // --- GESTIONE LOGICHE DI AUTENTICAZIONE ---
+
+        async function handleRegisterAnon(event) {
+            const email = document.getElementById('link-email').value;
+            const password = document.getElementById('link-password').value;
+            
+            if (!auth.currentUser || !isAnonymous) {
+                alertAuthMessage("Errore: Non sei un utente anonimo o sessione scaduta.", 'danger');
+                return;
+            }
+
+            try {
+                // 1. Crea le credenziali (non autentica ancora)
+                const credential = firebaseApp.EmailAuthProvider.credential(email, password);
+
+                // 2. Collega le credenziali all'utente anonimo corrente
+                await firebaseApp.linkWithCredential(auth.currentUser, credential);
+                
+                // L'utente è ora un utente email/password e i dati non sono stati persi!
+                alertAuthMessage("Account migrato con successo! I tuoi dati sono ora sincronizzati.", 'success');
+                showView('auth'); // Ricarica la vista per aggiornare lo stato
+            } catch (error) {
+                if (error.code === 'auth/email-already-in-use') {
+                    alertAuthMessage("Questa email è già in uso. Prova ad accedere.", 'danger');
+                } else {
+                    console.error("Errore di registrazione/collegamento:", error);
+                    alertAuthMessage("Errore di registrazione. Controlla email e password.", 'danger');
+                }
+            }
+        }
+
+        async function handleLogin(event) {
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            
+            try {
+                // Disconnette l'utente anonimo corrente (se esiste)
+                if (auth.currentUser) {
+                    await auth.signOut();
+                }
+                
+                // Accede con le credenziali Email/Password
+                await firebaseApp.signInWithEmailAndPassword(auth, email, password);
+
+                // onAuthStateChanged gestirà il resto (setup del listener e showView)
+                alertAuthMessage("Accesso eseguito con successo! I tuoi dati cloud sono stati caricati.", 'success');
+                showView('review'); // Sposta alla schermata di ripasso
+            } catch (error) {
+                console.error("Errore di login:", error);
+                alertAuthMessage("Accesso fallito. Email o password errate.", 'danger');
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await auth.signOut();
+                // Dopo il logout, onAuthStateChanged reindirizzerà all'accesso anonimo (se non disabilitato in Firebase)
+                alertMessage("Logout effettuato. Dati salvati sulla tua sessione anonima corrente.", 'success');
+                showView('review');
+            } catch (error) {
+                console.error("Errore di logout:", error);
+                alertMessage("Errore durante il logout.", 'danger');
+            }
+        }
+        
+        function alertAuthMessage(message, type) {
+            const container = document.getElementById('auth-message-container');
+            if (container) {
+                alertMessage(message, type);
+            }
+        }
+
 
         // --- INIZIALIZZAZIONE GLOBALE E AUTENTICAZIONE ---
 
@@ -613,15 +717,20 @@
             db = firebaseApp.db;
             auth = firebaseApp.auth;
             
-            // Esporre le funzioni di Firestore necessarie per le utility
-            firebaseApp.getDoc = doc => getDoc(doc);
-            
+            // Espone le funzioni di Firestore necessarie per le utility
+            firebaseApp.getDoc = getDoc;
+            firebaseApp.collection = collection;
+            firebaseApp.doc = doc;
+            firebaseApp.query = query;
+
+            // Tentativo di login (usa token se disponibile, altrimenti anonimo)
             const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+            
             try {
                 if (initialAuthToken) {
-                    await firebaseApp.auth.signInWithCustomToken(firebaseApp.auth, initialAuthToken);
+                    await auth.signInWithCustomToken(auth, initialAuthToken);
                 } else {
-                    await firebaseApp.auth.signInAnonymously(firebaseApp.auth);
+                    await auth.signInAnonymously(auth);
                 }
             } catch (error) {
                 console.error("Errore di autenticazione Firebase:", error);
@@ -634,14 +743,17 @@
                 if (user) {
                     userId = user.uid;
                     isAuthReady = true;
-                    // Mostra l'ID utente (necessario per debug)
-                    document.getElementById('user-info').textContent = `Utente ID: ${userId} (Cloud Sync)`;
+                    isAnonymous = user.isAnonymous;
+                    
+                    const status = isAnonymous ? "Anonimo (Solo su questo browser)" : "Portabile (Cloud)";
+                    document.getElementById('user-info').textContent = `Utente ID: ${userId} | Stato: ${status}`;
                     
                     await loadStats(); 
                     setupCardListener(); 
                 } else {
                     userId = null;
                     isAuthReady = false;
+                    isAnonymous = true;
                     document.getElementById('user-info').textContent = "Utente ID: NON AUTENTICATO";
                 }
                 
@@ -659,6 +771,11 @@
         window.handleReview = handleReview;
         window.handleCreateCard = handleCreateCard;
         window.previewMarkdown = previewMarkdown;
+        
+        // Nuove funzioni di autenticazione esposte
+        window.handleRegisterAnon = handleRegisterAnon;
+        window.handleLogin = handleLogin;
+        window.handleLogout = handleLogout;
     </script>
 </body>
 </html>
