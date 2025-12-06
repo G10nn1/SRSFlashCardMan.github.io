@@ -60,7 +60,8 @@
 
     <!-- Firebase Imports -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-analytics.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, EmailAuthProvider, linkWithCredential } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, query, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -70,14 +71,15 @@
         
         // --- INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE (da Passo 1.2) ---
         // Se non la incolli, l'app NON funzionerà con la sincronizzazione cloud.
-        const FIREBASE_CONFIG = {
-            apiKey: "IL_TUO_API_KEY_OTTENUTA_DALLA_CONSOLE",
-            authDomain: "IL_TUO_AUTH_DOMAIN",
-            projectId: "IL_TUO_PROJECT_ID", 
-            storageBucket: "IL_TUO_STORAGE_BUCKET",
-            messagingSenderId: "IL_TUO_MESSAGING_SENDER_ID",
-            appId: "IL_TUO_APP_ID"
-        };
+      const firebaseConfig = {
+        apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
+        authDomain: "flashcard-9d034.firebaseapp.com",
+        projectId: "flashcard-9d034",
+        storageBucket: "flashcard-9d034.firebasestorage.app",
+        messagingSenderId: "779697153912",
+        appId: "1:779697153912:web:163d564cd9dba40d338a8d",
+        measurementId: "G-6LWH9W8YEL"
+      };
 
         const appId = FIREBASE_CONFIG.projectId;
         const firebaseConfig = FIREBASE_CONFIG;
@@ -85,6 +87,7 @@
 
         // Inizializzazione Firebase
         const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
         const db = getFirestore(app);
         const auth = getAuth(app);
 
