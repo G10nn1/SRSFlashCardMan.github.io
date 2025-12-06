@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SRS Flashcard App</title>
+    <title>SRS Flashcard Cloud Sync</title>
     <!-- Caricamento di Tailwind CSS per uno styling rapido e responsivo -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Caricamento di Marked.js per il rendering del Markdown -->
@@ -40,8 +40,11 @@
 
     <!-- Contenitore Principale -->
     <div class="max-w-4xl mx-auto bg-white shadow-xl rounded-xl p-6 md:p-10">
-        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">SRS Flashcard Manager</h1>
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">SRS Cloud Flashcard Manager</h1>
         
+        <!-- User ID Display (Importante per il Debug Firestore) -->
+        <p id="user-info" class="text-xs text-center text-gray-500 mb-4">Utente: In attesa di autenticazione...</p>
+
         <!-- Navigazione (Menu) -->
         <nav class="flex justify-center space-x-4 mb-8">
             <button onclick="showView('review')" id="nav-review" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-blue-100 bg-blue-500 text-white">Ripasso Giornaliero</button>
@@ -54,20 +57,57 @@
         </div>
     </div>
 
-    <!-- Script JavaScript -->
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Attiva il logging per facilitare il debug
+        setLogLevel('Debug');
+        
+	    // Import the functions you need from the SDKs you need
+	    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+	    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-analytics.js";
+	    // TODO: Add SDKs for Firebase products that you want to use
+	    // https://firebase.google.com/docs/web/setup#available-libraries
+	    
+	    // Your web app's Firebase configuration
+	    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+	    const firebaseConfig = {
+		  apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
+		  authDomain: "flashcard-9d034.firebaseapp.com",
+		  projectId: "flashcard-9d034",
+		  storageBucket: "flashcard-9d034.firebasestorage.app",
+		  messagingSenderId: "779697153912",
+		  appId: "1:779697153912:web:163d564cd9dba40d338a8d",
+		  measurementId: "G-6LWH9W8YEL"
+	    };
+
+	    // Initialize Firebase
+	    const app = initializeApp(firebaseConfig);
+	    const analytics = getAnalytics(app);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        window.firebaseApp = { db, auth, onSnapshot }; // Esponi per l'uso nello script principale
+    </script>
+
+    <!-- Script JavaScript Principale -->
     <script>
         // CONFIGURAZIONE GLOBALE E MODELLO DATI
-        const DB_NAME = 'SRS_Flashcard_DB';
-        const DB_VERSION = 1;
         const STORE_NAME = 'flashcards';
-        const STATS_STORE_NAME = 'stats';
+        const STATS_DOC_ID = 'global_stats';
         
         // A. Dati Globali (Constants)
         const INTERVALS = [1, 3, 7, 16, 35];
 
-        // Le funzionalità AI sono state rimosse per semplificare il deployment e l'architettura.
-
         let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false;
+
         let allCards = [];
         let dueCards = [];
         let currentCardIndex = 0;
@@ -76,32 +116,24 @@
 
         // --- UTILITY PER DATE E LOGICA SRS ---
 
-        /** Calcola il timestamp di mezzanotte UTC per una data (usato per l'indicizzazione) */
         function getMidnightTimestamp(date) {
             const d = new Date(date);
             d.setHours(0, 0, 0, 0);
             return d.getTime();
         }
 
-        /** Aggiunge giorni a una data */
         function addDays(date, days) {
             const result = new Date(date);
             result.setDate(result.getDate() + days);
             return result;
         }
 
-        /**
-         * 3. LOGICA ALGORITMICA (IL MOTORE SRS)
-         * Calcola il prossimo livello e la prossima data di ripasso.
-         */
         function calculateNextReview(card, isCorrect) {
             let newLevel = card.livelloDiRipetizione;
 
             if (isCorrect) {
-                // A. Risposta Corretta (Promozione)
                 newLevel = Math.min(newLevel + 1, INTERVALS.length);
             } else {
-                // B. Risposta Sbagliata (Punizione)
                 newLevel = Math.max(1, newLevel - 1);
             }
 
@@ -115,122 +147,97 @@
             };
         }
 
+        // --- LOGICA FIREBASE FIRESTORE ---
 
-        // --- LOGICA INDEXEDDB ---
-
-        /** Inizializza il database IndexedDB */
-        function initDB() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-                request.onerror = (event) => {
-                    console.error("Errore nell'apertura di IndexedDB:", event.target.error);
-                    reject("Errore DB");
-                };
-
-                request.onupgradeneeded = (event) => {
-                    const db = event.target.result;
-                    // Crea l'Object Store 'flashcards'
-                    if (!db.objectStoreNames.contains(STORE_NAME)) {
-                        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-                        // Crea gli indici richiesti
-                        store.createIndex('dataDiProssimoRipasso', 'dataDiProssimoRipasso', { unique: false });
-                        store.createIndex('argomento', 'argomento', { unique: false });
-                    }
-                    // Crea l'Object Store 'stats' per le metriche aggregate
-                    if (!db.objectStoreNames.contains(STATS_STORE_NAME)) {
-                        db.createObjectStore(STATS_STORE_NAME, { keyPath: 'id' });
-                    }
-                };
-
-                request.onsuccess = (event) => {
-                    db = event.target.result;
-                    console.log("IndexedDB aperto con successo.");
-                    resolve(db);
-                };
-            });
+        /** Funzione per ottenere il riferimento alla collezione flashcards dell'utente corrente */
+        function getCardsCollectionRef(database, currentUserId) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            return collection(database, 'artifacts', appId, 'users', currentUserId, STORE_NAME);
         }
 
-        /** Esegue una transazione di lettura/scrittura */
-        function transact(storeName, mode) {
-            const transaction = db.transaction(storeName, mode);
-            return transaction.objectStore(storeName);
+        /** Funzione per ottenere il riferimento al documento delle statistiche dell'utente corrente */
+        function getStatsDocRef(database, currentUserId) {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            return doc(database, 'artifacts', appId, 'users', currentUserId, 'stats', STATS_DOC_ID);
+        }
+        
+        /** Salva o aggiorna una singola carta nel cloud */
+        async function saveCard(card) {
+            if (!userId) {
+                console.error("Tentativo di salvare la carta senza userId. Dati non salvati.");
+                return;
+            }
+            try {
+                // setDoc crea o sovrascrive il documento con l'ID specificato (card.id)
+                await setDoc(doc(getCardsCollectionRef(db, userId), String(card.id)), card);
+            } catch (error) {
+                console.error("Errore nel salvataggio della carta in Firestore:", error);
+                throw error;
+            }
         }
 
-        /** Salva o aggiorna una singola carta */
-        function saveCard(card) {
-            return new Promise((resolve, reject) => {
-                const store = transact(STORE_NAME, 'readwrite');
-                const request = store.put(card);
-
-                request.onsuccess = () => resolve(card);
-                request.onerror = (event) => reject(event.target.error);
-            });
+        /** Salva le statistiche globali dell'utente */
+        async function saveStats() {
+            if (!userId) return;
+            try {
+                // setDoc con { merge: true } aggiorna solo i campi modificati
+                await setDoc(getStatsDocRef(db, userId), stats, { merge: true });
+            } catch (error) {
+                console.error("Errore nel salvataggio delle statistiche in Firestore:", error);
+                throw error;
+            }
+        }
+        
+        /** Carica le statistiche (una tantum, per inizializzazione) */
+        async function loadStats() {
+            if (!userId) return;
+            try {
+                const docSnap = await firebaseApp.getDoc(getStatsDocRef(db, userId));
+                if (docSnap.exists()) {
+                    stats = { ...stats, ...docSnap.data() };
+                }
+                stats.totalCards = allCards.length;
+            } catch (error) {
+                console.warn("Impossibile caricare le statistiche in Firestore.");
+            }
         }
 
-        /** Carica le statistiche globali */
-        function loadStats() {
-            return new Promise((resolve) => {
-                const store = transact(STATS_STORE_NAME, 'readonly');
-                const request = store.get('global_stats');
-                
-                request.onsuccess = (event) => {
-                    stats = {
-                        totalOk: 0,
-                        totalKo: 0,
-                        totalCards: allCards.length,
-                        topicStats: {},
-                        ...(event.target.result || {})
-                    };
-                    stats.totalCards = allCards.length;
-                    resolve(stats);
-                };
-                request.onerror = () => {
-                    console.warn("Impossibile caricare le statistiche. Usando i valori predefiniti.");
-                    resolve(stats);
-                };
+        /** Abilita l'ascolto in tempo reale dei dati delle flashcard */
+        function setupCardListener() {
+            if (!userId || !isAuthReady) return;
+
+            const cardsQuery = query(getCardsCollectionRef(db, userId));
+
+            // onSnapshot gestisce la prima lettura e gli aggiornamenti successivi
+            const unsubscribe = firebaseApp.onSnapshot(cardsQuery, (snapshot) => {
+                allCards = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    // Assicurati che dataDiProssimoRipasso sia un numero (timestamp)
+                    data.dataDiProssimoRipasso = data.dataDiProssimoRipasso || 0; 
+                    allCards.push(data);
+                });
+
+                const today = getMidnightTimestamp(new Date());
+
+                dueCards = allCards
+                    .filter(card => card.dataDiProssimoRipasso <= today)
+                    .sort((a, b) => a.dataDiProssimoRipasso - b.dataDiProssimoRipasso);
+
+                stats.totalCards = allCards.length;
+
+                // Forza il re-rendering della vista corrente con i nuovi dati
+                if (currentView === 'review' || currentView === 'stats') {
+                    showView(currentView);
+                }
+                console.log(`[Firestore] Carte caricate/aggiornate: ${allCards.length}, Dovute oggi: ${dueCards.length}`);
+
+            }, (error) => {
+                console.error("Errore onSnapshot:", error);
+                alertMessage("Errore di sincronizzazione dati: controllare la console.", 'danger');
             });
-        }
 
-        /** Salva le statistiche globali */
-        function saveStats() {
-            stats.id = 'global_stats';
-            return new Promise((resolve, reject) => {
-                const store = transact(STATS_STORE_NAME, 'readwrite');
-                const request = store.put(stats);
-
-                request.onsuccess = () => resolve();
-                request.onerror = (event) => reject(event.target.error);
-            });
-        }
-
-        /** Carica TUTTE le carte e filtra quelle da ripassare */
-        async function loadCards() {
-            return new Promise((resolve, reject) => {
-                const store = transact(STORE_NAME, 'readonly');
-                const request = store.getAll();
-
-                request.onsuccess = (event) => {
-                    allCards = event.target.result || [];
-                    
-                    const today = getMidnightTimestamp(new Date());
-
-                    // Filtra le carte la cui data di ripasso è oggi o passata.
-                    dueCards = allCards
-                        .filter(card => card.dataDiProssimoRipasso <= today)
-                        .sort((a, b) => a.dataDiProssimoRipasso - b.dataDiProssimoRipasso);
-
-                    stats.totalCards = allCards.length;
-                    
-                    console.log(`Carte totali: ${allCards.length}, Carte da ripassare oggi: ${dueCards.length}`);
-                    resolve();
-                };
-
-                request.onerror = (event) => {
-                    console.error("Errore nel caricamento delle carte:", event.target.error);
-                    reject("Errore nel caricamento delle carte.");
-                };
-            });
+            return unsubscribe; 
         }
 
         // --- GESTIONE VISTE E FLUSSO APPLICAZIONE ---
@@ -250,17 +257,22 @@
                 }
             });
 
+            if (!isAuthReady) {
+                contentDiv.innerHTML = '<div class="text-center p-8 text-gray-600">Autenticazione in corso...</div>';
+                return;
+            }
+
             contentDiv.innerHTML = '<div class="flex justify-center items-center h-48"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div></div>';
 
             switch (viewName) {
                 case 'review':
-                    loadCards().then(renderReviewView);
+                    renderReviewView();
                     break;
                 case 'create':
                     renderCreateView();
                     break;
                 case 'stats':
-                    loadCards().then(loadStats).then(renderStatsView);
+                    loadStats().then(renderStatsView);
                     break;
                 default:
                     renderReviewView();
@@ -360,6 +372,7 @@
             card.livelloDiRipetizione = srsResult.livelloDiRipetizione;
             card.dataDiProssimoRipasso = srsResult.dataDiProssimoRipasso;
 
+            // Aggiorna le statistiche in memoria
             if (isCorrect) {
                 stats.totalOk++;
             } else {
@@ -375,20 +388,22 @@
             }
 
             try {
+                // Salva le modifiche in Firestore
                 await saveCard(card);
                 await saveStats();
                 
+                // onSnapshot aggiornerà automaticamente la UI. Qui passiamo semplicemente alla prossima carta
                 currentCardIndex++;
                 if (currentCardIndex < dueCards.length) {
                     renderReviewView();
                 } else {
                     currentCardIndex = 0;
-                    showView('review');
+                    showView('review'); // Ricarica la vista (mostrerà il messaggio "Complimenti")
                 }
 
             } catch (e) {
-                console.error("Errore nell'aggiornamento della carta:", e);
-                alertMessage("Errore critico: impossibile salvare l'aggiornamento della carta nel DB.", 'danger', 'message-container-review');
+                console.error("Errore nel salvataggio della carta:", e);
+                alertMessage("Errore critico: impossibile salvare l'aggiornamento della carta nel cloud.", 'danger', 'message-container-review');
             }
         }
 
@@ -470,10 +485,10 @@
                 if (previewDomanda) previewDomanda.classList.add('hidden');
                 if (previewRisposta) previewRisposta.classList.add('hidden');
                 
-                alertMessage("Carta creata con successo! Prossimo ripasso: Domani.", 'success');
+                alertMessage("Carta creata con successo! Dati sincronizzati nel cloud.", 'success');
             } catch (e) {
                 console.error("Errore nel salvataggio della carta:", e);
-                alertMessage("Errore: impossibile salvare la carta nel database.", 'danger');
+                alertMessage("Errore: impossibile salvare la carta nel database cloud.", 'danger');
             }
         }
 
@@ -587,25 +602,56 @@
             }, 5000);
         }
 
-        // --- INIZIALIZZAZIONE ---
+        // --- INIZIALIZZAZIONE GLOBALE E AUTENTICAZIONE ---
 
-        window.onload = async () => {
-            try {
-                await initDB();
-                await loadCards();
-                await loadStats();
-                showView('review');
-            } catch (e) {
-                document.getElementById('app-content').innerHTML = `
-                    <div class="text-center p-8 bg-red-100 rounded-lg border border-red-400 text-red-700">
-                        <p class="font-bold">Errore di Inizializzazione Critico</p>
-                        <p>Impossibile accedere a IndexedDB. L'applicazione non può funzionare senza la persistenza dei dati.</p>
-                        <p class="text-sm mt-2">${e}</p>
-                    </div>
-                `;
-                console.error("Errore all'avvio dell'applicazione:", e);
+        async function initApp() {
+            if (typeof window.firebaseApp === 'undefined') {
+                setTimeout(initApp, 100);
+                return;
             }
-        };
+
+            db = firebaseApp.db;
+            auth = firebaseApp.auth;
+            
+            // Esporre le funzioni di Firestore necessarie per le utility
+            firebaseApp.getDoc = doc => getDoc(doc);
+            
+            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+            try {
+                if (initialAuthToken) {
+                    await firebaseApp.auth.signInWithCustomToken(firebaseApp.auth, initialAuthToken);
+                } else {
+                    await firebaseApp.auth.signInAnonymously(firebaseApp.auth);
+                }
+            } catch (error) {
+                console.error("Errore di autenticazione Firebase:", error);
+                alertMessage("Errore di autenticazione. I dati non saranno salvati.", 'danger');
+                return;
+            }
+
+            // Listener per lo stato di autenticazione
+            firebaseApp.onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    // Mostra l'ID utente (necessario per debug)
+                    document.getElementById('user-info').textContent = `Utente ID: ${userId} (Cloud Sync)`;
+                    
+                    await loadStats(); 
+                    setupCardListener(); 
+                } else {
+                    userId = null;
+                    isAuthReady = false;
+                    document.getElementById('user-info').textContent = "Utente ID: NON AUTENTICATO";
+                }
+                
+                if (isAuthReady && currentView) {
+                    showView(currentView);
+                }
+            });
+        }
+
+        window.onload = initApp;
 
         /** Rende le funzioni globalmente accessibili per gli attributi onclick nell'HTML */
         window.showView = showView;
