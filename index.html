@@ -50,7 +50,7 @@
             <button onclick="showView('review')" id="nav-review" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-blue-100 bg-blue-500 text-white">Ripasso Giornaliero</button>
             <button onclick="showView('create')" id="nav-create" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Crea Nuova Carta</button>
             <button onclick="showView('stats')" id="nav-stats" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Riepilogo & Statistiche</button>
-            <button onclick="showView('auth')" id="nav-auth" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-yellow-100 text-yellow-700">Login/Sync</button>
+            <button onclick="showView('auth')" id="nav-auth" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-yellow-100 text-yellow-700">Login/Logout</button>
         </nav>
 
         <!-- Area Contenuto Dinamico -->
@@ -61,7 +61,8 @@
     <!-- Firebase Imports -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, EmailAuthProvider, linkWithCredential } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // Rimuove signInAnonymously e altre funzioni anonime
+        import { getAuth, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, EmailAuthProvider, linkWithCredential } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, query, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js"; 
@@ -71,15 +72,15 @@
         
         // --- INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE (da Passo 1.2) ---
         // Se non la incolli, l'app NON funzionerà con la sincronizzazione cloud.
-      const FIREBASE_CONFIG = {
-        apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
-        authDomain: "flashcard-9d034.firebaseapp.com",
-        projectId: "flashcard-9d034",
-        storageBucket: "flashcard-9d034.firebasestorage.app",
-        messagingSenderId: "779697153912",
-        appId: "1:779697153912:web:163d564cd9dba40d338a8d",
-        measurementId: "G-6LWH9W8YEL"
-      };
+          const firebaseConfig = {
+            apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
+            authDomain: "flashcard-9d034.firebaseapp.com",
+            projectId: "flashcard-9d034",
+            storageBucket: "flashcard-9d034.firebasestorage.app",
+            messagingSenderId: "779697153912",
+            appId: "1:779697153912:web:163d564cd9dba40d338a8d",
+            measurementId: "G-6LWH9W8YEL"
+          };
 
         const appId = FIREBASE_CONFIG.projectId;
         const firebaseConfig = FIREBASE_CONFIG;
@@ -101,9 +102,9 @@
             EmailAuthProvider, linkWithCredential, 
             createUserWithEmailAndPassword, signInWithEmailAndPassword,
             collection, doc, query, setDoc,
-            // CORREZIONE CHIAVE: Espone onAuthStateChanged per il listener
             onAuthStateChanged, 
-            signInAnonymously, signInWithCustomToken
+            // Rimosso signInAnonymously
+            signInWithCustomToken
         };
     </script>
 
@@ -120,7 +121,8 @@
         let auth;
         let userId = null;
         let isAuthReady = false;
-        let isAnonymous = false; // Nuovo stato per tracciare l'utente anonimo
+        // isAnonymous non è più necessario, ma lo manteniamo false per sicurezza.
+        let isAnonymous = false; 
 
         let allCards = [];
         let dueCards = [];
@@ -231,7 +233,7 @@
 
                 dueCards = allCards
                     .filter(card => card.dataDiProssimoRipasso <= today)
-                    .sort((a, b) => a.dataDiProssimoRipasso - b.dataDiProssimoRipasso);
+                    .sort((a, b) => a.dataDiProssimoRipasso - b.dataDiProssipoRipasso);
 
                 stats.totalCards = allCards.length;
 
@@ -271,8 +273,10 @@
             });
 
             if (!isAuthReady) {
-                contentDiv.innerHTML = '<div class="text-center p-8 text-gray-600">Autenticazione in corso...</div>';
-                return;
+                // Se non è autenticato, forza la visualizzazione della schermata di autenticazione
+                if (viewName !== 'auth') {
+                     return showView('auth');
+                }
             }
 
             contentDiv.innerHTML = '<div class="flex justify-center items-center h-48"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div></div>';
@@ -606,88 +610,77 @@
         function renderAuthView() {
             const contentDiv = document.getElementById('app-content');
             
-            let statusText = isAnonymous ? 
-                `<p class="text-orange-600 font-semibold">Stato: Utente Anonimo (Dati salvati solo su questo browser, non portatili)</p>` :
-                `<p class="text-green-600 font-semibold">Stato: Autenticato (Dati sincronizzati su tutti i dispositivi)</p>`;
+            let statusText = userId ? 
+                `<p class="text-green-600 font-semibold">Stato: Autenticato (Dati sincronizzati su tutti i dispositivi)</p>` :
+                `<p class="text-red-600 font-semibold">Stato: Disconnesso (Accedi o Registrati)</p>`;
 
-            let actionButton = isAnonymous ? `
-                <div class="mt-6 border-t pt-6">
-                    <h3 class="text-xl font-bold text-gray-800 mb-4">Porta i Tuoi Dati sul Cloud</h3>
-                    <p class="mb-4 text-gray-600 text-sm">Registrandoti, collegherai tutte le tue flashcard anonime al tuo nuovo account email, permettendo la sincronizzazione su smartphone e altri PC.</p>
-                    <form id="register-anon-form" onsubmit="event.preventDefault(); handleRegisterAnon(event);">
-                        <input type="email" id="link-email" placeholder="Email" required class="w-full px-4 py-2 mb-3 border border-gray-300 rounded-lg">
-                        <input type="password" id="link-password" placeholder="Password (min. 6 caratteri)" required class="w-full px-4 py-2 mb-4 border border-gray-300 rounded-lg">
-                        <button type="submit" class="w-full py-2 bg-yellow-500 text-white font-bold rounded-lg hover:bg-yellow-600 transition duration-150">
-                            Collega e Registra Account
-                        </button>
-                    </form>
-                </div>
-            ` : `
+            let actionButton = userId ? `
                 <div class="mt-6 border-t pt-6 text-center">
-                    <p class="text-gray-700">Il tuo account è già portatile.</p>
+                    <p class="text-gray-700">Sei connesso con l'account email.</p>
                     <button onclick="handleLogout()" class="mt-4 px-6 py-2 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition duration-150">
                         Logout
                     </button>
+                </div>
+            ` : `
+                <div class="mt-6 border-t pt-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">Registrazione</h3>
+                    <p class="mb-4 text-gray-600 text-sm">Crea un nuovo account email per iniziare a sincronizzare i tuoi dati.</p>
+                    <form id="register-form" onsubmit="event.preventDefault(); handleRegister(event);">
+                        <input type="email" id="register-email" placeholder="Email" required class="w-full px-4 py-2 mb-3 border border-gray-300 rounded-lg">
+                        <input type="password" id="register-password" placeholder="Password (min. 6 caratteri)" required class="w-full px-4 py-2 mb-4 border border-gray-300 rounded-lg">
+                        <button type="submit" class="w-full py-2 bg-yellow-500 text-gray-800 font-bold rounded-lg hover:bg-yellow-600 transition duration-150">
+                            Registrati
+                        </button>
+                    </form>
+
+                    <h3 class="text-xl font-bold text-gray-800 mb-4 mt-8 pt-4 border-t">Accesso</h3>
+                    <form id="login-form" onsubmit="event.preventDefault(); handleLogin(event);">
+                        <input type="email" id="login-email" placeholder="Email" required class="w-full px-4 py-2 mb-3 border border-gray-300 rounded-lg">
+                        <input type="password" id="login-password" placeholder="Password" required class="w-full px-4 py-2 mb-4 border border-gray-300 rounded-lg">
+                        <button type="submit" class="w-full py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150">
+                            Accedi
+                        </button>
+                    </form>
                 </div>
             `;
 
 
             contentDiv.innerHTML = `
                 <div class="max-w-md mx-auto p-6 bg-white shadow-lg rounded-xl">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Sincronizzazione Account</h2>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4 text-center">Gestione Account Cloud</h2>
                     <div class="text-center p-4 border border-gray-200 rounded-lg mb-6">
                         ${statusText}
-                        <p class="text-xs text-gray-500 mt-1">ID Corrente: ${userId}</p>
+                        <p class="text-xs text-gray-500 mt-1">ID Corrente: ${userId || 'N/A'}</p>
                     </div>
 
                     ${actionButton}
 
                     <div id="auth-message-container" class="mt-4"></div>
-                    
-                    ${!isAnonymous ? '' : `
-                    <div class="mt-8 border-t pt-6">
-                        <h3 class="text-xl font-bold text-gray-800 mb-4">Accesso/Registrazione</h3>
-                        <p class="mb-4 text-gray-600 text-sm">Se hai già un account su un altro dispositivo, accedi qui sotto per caricare i tuoi dati cloud.</p>
-                        <form id="login-form" onsubmit="event.preventDefault(); handleLogin(event);">
-                            <input type="email" id="login-email" placeholder="Email" required class="w-full px-4 py-2 mb-3 border border-gray-300 rounded-lg">
-                            <input type="password" id="login-password" placeholder="Password" required class="w-full px-4 py-2 mb-4 border border-gray-300 rounded-lg">
-                            <button type="submit" class="w-full py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition duration-150">
-                                Accedi
-                            </button>
-                        </form>
-                    </div>
-                    `}
                 </div>
             `;
         }
 
         // --- GESTIONE LOGICHE DI AUTENTICAZIONE ---
 
-        async function handleRegisterAnon(event) {
-            const email = document.getElementById('link-email').value;
-            const password = document.getElementById('link-password').value;
+        async function handleRegister(event) {
+            const email = document.getElementById('register-email').value;
+            const password = document.getElementById('register-password').value;
             
-            if (!auth.currentUser || !isAnonymous) {
-                alertAuthMessage("Errore: Non sei un utente anonimo o sessione scaduta.", 'danger');
-                return;
-            }
-
             try {
-                // 1. Crea le credenziali (non autentica ancora)
-                const credential = firebaseApp.EmailAuthProvider.credential(email, password);
-
-                // 2. Collega le credenziali all'utente anonimo corrente
-                await firebaseApp.linkWithCredential(auth.currentUser, credential);
+                // Rimuoviamo la migrazione anonima, usiamo la creazione diretta
+                await firebaseApp.createUserWithEmailAndPassword(auth, email, password);
                 
-                // L'utente è ora un utente email/password e i dati non sono stati persi!
-                alertAuthMessage("Account migrato con successo! I tuoi dati sono ora sincronizzati.", 'success');
-                showView('auth'); // Ricarica la vista per aggiornare lo stato
+                // onAuthStateChanged gestirà l'aggiornamento UI
+                alertAuthMessage("Registrazione e accesso eseguiti con successo! Dati pronti per la sincronizzazione.", 'success');
+                showView('review'); 
             } catch (error) {
+                console.error("Errore di registrazione:", error);
                 if (error.code === 'auth/email-already-in-use') {
-                    alertAuthMessage("Questa email è già in uso. Prova ad accedere.", 'danger');
+                    alertAuthMessage("Questa email è già in uso. Accedi invece.", 'danger');
+                } else if (error.code === 'auth/weak-password') {
+                    alertAuthMessage("Password troppo debole (minimo 6 caratteri).", 'danger');
                 } else {
-                    console.error("Errore di registrazione/collegamento:", error);
-                    alertAuthMessage("Errore di registrazione. Controlla email e password.", 'danger');
+                    alertAuthMessage("Errore di registrazione. Riprova.", 'danger');
                 }
             }
         }
@@ -697,15 +690,9 @@
             const password = document.getElementById('login-password').value;
             
             try {
-                // Disconnette l'utente anonimo corrente (se esiste)
-                if (auth.currentUser) {
-                    await auth.signOut();
-                }
-                
                 // Accede con le credenziali Email/Password
                 await firebaseApp.signInWithEmailAndPassword(auth, email, password);
 
-                // onAuthStateChanged gestirà il resto (setup del listener e showView)
                 alertAuthMessage("Accesso eseguito con successo! I tuoi dati cloud sono stati caricati.", 'success');
                 showView('review'); // Sposta alla schermata di ripasso
             } catch (error) {
@@ -717,9 +704,8 @@
         async function handleLogout() {
             try {
                 await auth.signOut();
-                // Dopo il logout, onAuthStateChanged reindirizzerà all'accesso anonimo (se non disabilitato in Firebase)
-                alertMessage("Logout effettuato. Dati salvati sulla tua sessione anonima corrente.", 'success');
-                showView('review');
+                // Dopo il logout, onAuthStateChanged imposterà userId=null e showView forzerà il reindirizzamento al login.
+                alertMessage("Logout effettuato. Per favore, accedi di nuovo per vedere i tuoi dati.", 'success');
             } catch (error) {
                 console.error("Errore durante il logout:", error);
                 alertMessage("Errore durante il logout.", 'danger');
@@ -745,44 +731,35 @@
             db = firebaseApp.db;
             auth = firebaseApp.auth;
             
-            // Tentativo di login (usa token se disponibile, altrimenti anonimo)
-            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-            
-            try {
-                // CORREZIONE CHIAVE: Utilizzare le funzioni esposte nel modulo, passando l'oggetto auth
-                if (initialAuthToken) {
-                    await firebaseApp.signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await firebaseApp.signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Errore di autenticazione Firebase:", error);
-                alertMessage("Errore di autenticazione. I dati non saranno salvati.", 'danger');
-                return;
-            }
+            const initialAuthToken = null; // Rimosso l'uso del token
+
+            // L'autenticazione iniziale non avviene più qui, ma tramite il listener onAuthStateChanged
+            // per vedere se c'è un utente loggato dal browser.
 
             // Listener per lo stato di autenticazione
             firebaseApp.onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     userId = user.uid;
                     isAuthReady = true;
-                    isAnonymous = user.isAnonymous;
+                    isAnonymous = user.isAnonymous || false; // Dovrebbe essere sempre false se l'anonimo è disabilitato
                     
-                    const status = isAnonymous ? "Anonimo (Solo su questo browser)" : "Portabile (Cloud)";
-                    document.getElementById('user-info').textContent = `Utente ID: ${userId} | Stato: ${status}`;
+                    const status = userId ? "Autenticato con Email" : "Non loggato";
+                    document.getElementById('user-info').textContent = `Utente ID: ${userId} | Stato: Portabile (Cloud)`;
                     
                     await loadStats(); 
                     setupCardListener(); 
                 } else {
+                    // Nessun utente loggato (incluso anonimo, ora disabilitato)
                     userId = null;
-                    isAuthReady = false;
-                    isAnonymous = true;
-                    document.getElementById('user-info').textContent = "Utente ID: NON AUTENTICATO";
+                    isAuthReady = true; // Pronto, ma non loggato
+                    isAnonymous = false;
+                    document.getElementById('user-info').textContent = "Utente ID: NON LOGGATO";
+                    // Forza la visualizzazione della schermata di autenticazione
+                    currentView = 'auth';
                 }
                 
-                if (isAuthReady && currentView) {
-                    showView(currentView);
-                }
+                // Mostra la vista (che ora sarà 'auth' se userId è null)
+                showView(currentView);
             });
         }
 
@@ -793,14 +770,13 @@
         window.showAnswer = showAnswer;
         window.handleReview = handleReview;
         window.handleCreateCard = handleCreateCard;
-        // Funzione mancante:
         window.previewMarkdown = previewMarkdown; 
         
         // Nuove funzioni di autenticazione esposte
-        window.handleRegisterAnon = handleRegisterAnon;
+        window.handleRegister = handleRegister; // Modificato da handleRegisterAnon
         window.handleLogin = handleLogin;
         window.handleLogout = handleLogout;
-        window.alertAuthMessage = alertAuthMessage; // Esporre anche questa helper function
+        window.alertAuthMessage = alertAuthMessage; 
     </script>
 </body>
 </html>
