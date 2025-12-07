@@ -34,6 +34,12 @@
         .card-content img { max-width: 100%; height: auto; border-radius: 0.5rem; margin: 1em 0; }
         .card-content ul { list-style: disc; margin-left: 1.5em; padding-left: 0; }
         .card-content strong { font-weight: 600; }
+        /* Stile specifico per l'archivio carte */
+        .card-list-item:hover {
+            background-color: #f3f4f6;
+            transform: scale(1.01);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -49,6 +55,7 @@
         <nav class="flex justify-center space-x-4 mb-8">
             <button onclick="showView('review')" id="nav-review" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-blue-100 bg-blue-500 text-white">Ripasso Giornaliero</button>
             <button onclick="showView('create')" id="nav-create" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Crea Nuova Carta</button>
+            <button onclick="showView('archive')" id="nav-archive" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Gestione Archivio</button>
             <button onclick="showView('stats')" id="nav-stats" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Riepilogo & Statistiche</button>
             <button onclick="showView('auth')" id="nav-auth" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-yellow-100 text-yellow-700">Login/Logout</button>
         </nav>
@@ -61,9 +68,8 @@
     <!-- Firebase Imports -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // Rimuove signInAnonymously e altre funzioni anonime
         import { getAuth, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, EmailAuthProvider, linkWithCredential } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, query, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js"; 
         
@@ -72,15 +78,15 @@
         
         // --- INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE (da Passo 1.2) ---
         // Se non la incolli, l'app NON funzionerà con la sincronizzazione cloud.
-          const FIREBASE_CONFIG = {
-            apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
-            authDomain: "flashcard-9d034.firebaseapp.com",
-            projectId: "flashcard-9d034",
-            storageBucket: "flashcard-9d034.firebasestorage.app",
-            messagingSenderId: "779697153912",
-            appId: "1:779697153912:web:163d564cd9dba40d338a8d",
-            measurementId: "G-6LWH9W8YEL"
-          };
+      const FIREBASE_CONFIG = {
+        apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
+        authDomain: "flashcard-9d034.firebaseapp.com",
+        projectId: "flashcard-9d034",
+        storageBucket: "flashcard-9d034.firebasestorage.app",
+        messagingSenderId: "779697153912",
+        appId: "1:779697153912:web:163d564cd9dba40d338a8d",
+        measurementId: "G-6LWH9W8YEL"
+      };
 
         const appId = FIREBASE_CONFIG.projectId;
         const firebaseConfig = FIREBASE_CONFIG;
@@ -101,9 +107,8 @@
             onSnapshot, getDoc, 
             EmailAuthProvider, linkWithCredential, 
             createUserWithEmailAndPassword, signInWithEmailAndPassword,
-            collection, doc, query, setDoc,
+            collection, doc, query, setDoc, deleteDoc, // Aggiunto deleteDoc
             onAuthStateChanged, 
-            // Rimosso signInAnonymously
             signInWithCustomToken
         };
     </script>
@@ -121,7 +126,6 @@
         let auth;
         let userId = null;
         let isAuthReady = false;
-        // isAnonymous non è più necessario, ma lo manteniamo false per sicurezza.
         let isAnonymous = false; 
 
         let allCards = [];
@@ -181,12 +185,29 @@
                 return;
             }
             try {
+                // setDoc crea o aggiorna una carta esistente in base all'ID
                 await firebaseApp.setDoc(firebaseApp.doc(getCardsCollectionRef(db, userId), String(card.id)), card);
             } catch (error) {
                 console.error("Errore nel salvataggio della carta in Firestore:", error);
                 throw error;
             }
         }
+
+        async function deleteCard(cardId) {
+            if (!userId) {
+                console.error("Tentativo di eliminare la carta senza userId.");
+                return;
+            }
+            try {
+                await firebaseApp.deleteDoc(firebaseApp.doc(getCardsCollectionRef(db, userId), String(cardId)));
+                alertMessage(`Carta eliminata con successo!`, 'success');
+            } catch (error) {
+                console.error("Errore nell'eliminazione della carta in Firestore:", error);
+                alertMessage(`Errore nell'eliminazione della carta.`, 'danger');
+                throw error;
+            }
+        }
+
 
         async function saveStats() {
             if (!userId) return;
@@ -213,9 +234,13 @@
 
         let unsubscribeCards = null;
 
+        /**
+         * setupCardListener mantiene allCards aggiornato in tempo reale.
+         * allCards contiene SEMPRE TUTTE le carte.
+         */
         function setupCardListener() {
             if (unsubscribeCards) {
-                unsubscribeCards(); // Pulisce il listener precedente
+                unsubscribeCards(); 
             }
             if (!userId || !isAuthReady) return;
 
@@ -231,13 +256,15 @@
 
                 const today = getMidnightTimestamp(new Date());
 
+                // dueCards contiene solo le carte per la vista di ripasso
                 dueCards = allCards
                     .filter(card => card.dataDiProssimoRipasso <= today)
-                    .sort((a, b) => a.dataDiProssimoRipasso - b.dataDiProssipoRipasso);
+                    .sort((a, b) => a.dataDiProssimoRipasso - b.dataDiProssimoRipasso);
 
                 stats.totalCards = allCards.length;
 
-                if (currentView === 'review' || currentView === 'stats') {
+                // Aggiorna solo la vista se non siamo nel mezzo di una modifica
+                if (currentView !== 'edit' && (currentView === 'review' || currentView === 'stats' || currentView === 'archive')) {
                     showView(currentView);
                 }
                 console.log(`[Firestore] Carte caricate/aggiornate: ${allCards.length}, Dovute oggi: ${dueCards.length}`);
@@ -272,7 +299,7 @@
                 }
             });
 
-            if (!isAuthReady) {
+            if (!isAuthReady || userId === null) {
                 // Se non è autenticato, forza la visualizzazione della schermata di autenticazione
                 if (viewName !== 'auth') {
                      return showView('auth');
@@ -287,6 +314,9 @@
                     break;
                 case 'create':
                     renderCreateView();
+                    break;
+                case 'archive':
+                    renderArchiveView(); // NUOVA VISTA
                     break;
                 case 'stats':
                     loadStats().then(renderStatsView);
@@ -367,95 +397,198 @@
             `;
         }
 
-        // ... (showAnswer, handleReview, renderCreateView, handleCreateCard, renderStatsView, alertMessage rimangono invariate) ...
+        // --- B. Schermata di Creazione/Modifica Carte ---
         
-        function showAnswer() {
-            if (isAnswerVisible) return;
-            isAnswerVisible = true;
-            const card = dueCards[currentCardIndex];
-            
-            document.getElementById('show-answer-btn').classList.add('hidden');
-            document.getElementById('card-answer-container').classList.remove('hidden');
-            document.getElementById('card-answer-content').innerHTML = marked.parse(card.risposta);
-        }
-
-        async function handleReview(isCorrect) {
-            const card = dueCards[currentCardIndex];
-            
-            const srsResult = calculateNextReview(card, isCorrect);
-            
-            card.livelloDiRipetizione = srsResult.livelloDiRipetizione;
-            card.dataDiProssimoRipasso = srsResult.dataDiProssimoRipasso;
-
-            if (isCorrect) {
-                stats.totalOk++;
-            } else {
-                stats.totalKo++;
-            }
-            if (!stats.topicStats[card.argomento]) {
-                stats.topicStats[card.argomento] = { ok: 0, ko: 0 };
-            }
-            if (isCorrect) {
-                stats.topicStats[card.argomento].ok++;
-            } else {
-                stats.topicStats[card.argomento].ko++;
-            }
-
-            try {
-                await saveCard(card);
-                await saveStats();
-                
-                currentCardIndex++;
-                if (currentCardIndex < dueCards.length) {
-                    renderReviewView();
-                } else {
-                    currentCardIndex = 0;
-                    showView('review');
-                }
-
-            } catch (e) {
-                console.error("Errore nel salvataggio della carta:", e);
-                alertMessage("Errore critico: impossibile salvare l'aggiornamento della carta nel cloud.", 'danger', 'message-container-review');
-            }
-        }
-
-        function renderCreateView() {
+        function renderCreateView(cardToEdit = null) {
             const contentDiv = document.getElementById('app-content');
-            
+            const isEditing = cardToEdit !== null;
+            const cardId = isEditing ? cardToEdit.id : '';
+            const cardDataDiProssimoRipasso = isEditing ? cardToEdit.dataDiProssimoRipasso : '';
+            const cardLivelloDiRipetizione = isEditing ? cardToEdit.livelloDiRipetizione : '';
+
             contentDiv.innerHTML = `
                 <div class="max-w-xl mx-auto p-6 bg-gray-50 rounded-xl shadow-inner">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Nuova Flashcard</h2>
-                    <form id="create-card-form" onsubmit="event.preventDefault(); handleCreateCard(event);">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">${isEditing ? 'Modifica Carta' : 'Nuova Flashcard'}</h2>
+                    
+                    <!-- Campi nascosti per il salvataggio in caso di modifica -->
+                    <input type="hidden" id="card-id" value="${cardId}">
+                    <input type="hidden" id="card-next-review" value="${cardDataDiProssimoRipasso}">
+                    <input type="hidden" id="card-level" value="${cardLivelloDiRipetizione}">
+
+                    <form id="create-card-form" onsubmit="event.preventDefault(); handleSaveCard(event, ${isEditing});">
                         
                         <div class="mb-4">
                             <label for="argomento" class="block text-sm font-medium text-gray-700 mb-1">Argomento (Categorizzazione)</label>
-                            <input type="text" id="argomento" name="argomento" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            <input type="text" id="argomento" name="argomento" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" value="${isEditing ? cardToEdit.argomento : ''}">
                         </div>
 
                         <div class="mb-4">
                             <label for="domanda" class="block text-sm font-medium text-gray-700 mb-1">Domanda (Markdown supportato)</label>
-                            <textarea id="domanda" name="domanda" rows="4" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+                            <textarea id="domanda" name="domanda" rows="4" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500">${isEditing ? cardToEdit.domanda : ''}</textarea>
                             <button type="button" onclick="previewMarkdown('domanda', 'preview-domanda')" class="mt-1 text-xs text-blue-600 hover:text-blue-800">Anteprima Domanda</button>
                             <div id="preview-domanda" class="mt-2 p-3 bg-white border border-dashed border-gray-300 rounded-lg hidden card-content"></div>
                         </div>
 
                         <div class="mb-6">
                             <label for="risposta" class="block text-sm font-medium text-gray-700 mb-1">Risposta (Markdown supportato)</label>
-                            <textarea id="risposta" name="risposta" rows="6" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
+                            <textarea id="risposta" name="risposta" rows="6" required class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500">${isEditing ? cardToEdit.risposta : ''}</textarea>
                             <button type="button" onclick="previewMarkdown('risposta', 'preview-risposta')" class="mt-1 text-xs text-blue-600 hover:text-blue-800">Anteprima Risposta</button>
                             <div id="preview-risposta" class="mt-2 p-3 bg-white border border-dashed border-gray-300 rounded-lg hidden card-content"></div>
                         </div>
                         
                         <button type="submit" class="w-full py-3 bg-green-500 text-white font-bold rounded-xl shadow-lg hover:bg-green-600 transition duration-150">
-                            Salva Nuova Carta
+                            ${isEditing ? 'Aggiorna Carta' : 'Salva Nuova Carta'}
                         </button>
-
-                        <div id="message-container" class="mt-4"></div>
                     </form>
+
+                    ${isEditing ? `<button onclick="handleDeleteCard(${cardId})" class="mt-4 w-full py-2 bg-red-500 text-white font-bold rounded-xl shadow-lg hover:bg-red-600 transition duration-150">Elimina Carta</button>` : ''}
+
+
+                    <div id="message-container" class="mt-4"></div>
                 </div>
             `;
+            // Esegue l'anteprima iniziale se sta modificando
+            if (isEditing) {
+                previewMarkdown('domanda', 'preview-domanda');
+                previewMarkdown('risposta', 'preview-risposta');
+            }
         }
         
+        /** Wrapper per la creazione (dal menu principale) */
+        function handleCreateCard() {
+             renderCreateView(null);
+        }
+
+        /** Gestisce il salvataggio o l'aggiornamento della carta */
+        async function handleSaveCard(event, isEditing) {
+            const form = event.target;
+            const data = new FormData(form);
+
+            const today = new Date();
+            let nextReviewDate;
+            let currentLevel;
+            let cardId;
+
+            if (isEditing) {
+                // Mantiene il livello e la data di ripasso esistenti
+                cardId = document.getElementById('card-id').value;
+                currentLevel = parseInt(document.getElementById('card-level').value);
+                nextReviewDate = parseInt(document.getElementById('card-next-review').value);
+            } else {
+                // Nuova carta: Livello 1, ripasso domani
+                cardId = Date.now();
+                currentLevel = 1;
+                nextReviewDate = getMidnightTimestamp(addDays(today, INTERVALS[0]));
+            }
+
+
+            const cardData = {
+                id: Number(cardId), // L'ID deve essere un numero per evitare problemi di ordinamento
+                domanda: data.get('domanda').trim(),
+                risposta: data.get('risposta').trim(),
+                argomento: data.get('argomento').trim() || 'Generale',
+                livelloDiRipetizione: currentLevel,
+                dataDiProssimoRipasso: nextReviewDate
+            };
+
+            try {
+                await saveCard(cardData);
+                if (!isEditing) {
+                    form.reset();
+                    const previewDomanda = document.getElementById('preview-domanda');
+                    const previewRisposta = document.getElementById('preview-risposta');
+                    if (previewDomanda) previewDomanda.classList.add('hidden');
+                    if (previewRisposta) previewRisposta.classList.add('hidden');
+                }
+
+                alertMessage(`Carta ${isEditing ? 'aggiornata' : 'creata'} con successo!`, 'success');
+                // Torna all'archivio dopo la modifica
+                if (isEditing) {
+                    showView('archive');
+                }
+            } catch (e) {
+                console.error("Errore nel salvataggio della carta:", e);
+                alertMessage(`Errore: impossibile ${isEditing ? 'aggiornare' : 'salvare'} la carta nel database cloud.`, 'danger');
+            }
+        }
+
+        // --- C. Gestione Archivio Carte (NUOVA VISTA) ---
+
+        function renderArchiveView() {
+            const contentDiv = document.getElementById('app-content');
+
+            if (allCards.length === 0) {
+                contentDiv.innerHTML = `
+                    <div class="text-center p-8 bg-blue-50 rounded-lg border border-blue-200">
+                        <h2 class="text-xl font-semibold text-blue-800 mt-3">Archivio Vuoto</h2>
+                        <p class="text-blue-700 mt-1">Non hai ancora inserito nessuna flashcard. Vai alla schermata "Crea Nuova Carta" per iniziare!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Ordina le carte per argomento e poi per livello di ripasso
+            const sortedCards = allCards.sort((a, b) => {
+                if (a.argomento < b.argomento) return -1;
+                if (a.argomento > b.argomento) return 1;
+                return a.livelloDiRipetizione - b.livelloDiRipetizione;
+            });
+
+            let listHtml = '';
+            sortedCards.forEach(card => {
+                const nextReviewDate = new Date(card.dataDiProssimoRipasso).toLocaleDateString('it-IT');
+                const firstLine = marked.parseInline(card.domanda).replace(/<\/?[^>]+(>|$)/g, "").substring(0, 80) + '...';
+
+                listHtml += `
+                    <div class="card-list-item p-4 mb-2 bg-white rounded-lg shadow cursor-pointer transition duration-150 ease-in-out border border-gray-100" onclick="editCard(${card.id})">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-sm font-semibold text-gray-800">${firstLine}</p>
+                                <p class="text-xs text-gray-500">Argomento: ${card.argomento}</p>
+                            </div>
+                            <div class="text-right flex flex-col items-end">
+                                <span class="px-3 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700">Livello ${card.livelloDiRipetizione}</span>
+                                <span class="text-xs text-gray-400 mt-1">Ripasso: ${nextReviewDate}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            contentDiv.innerHTML = `
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Archivio Completo (${allCards.length} Carte)</h2>
+                <div class="space-y-3 max-h-[60vh] overflow-y-auto">
+                    ${listHtml}
+                </div>
+                <div id="message-container" class="mt-4"></div>
+            `;
+        }
+
+        /** Funzione per trovare e passare la carta alla vista di modifica */
+        function editCard(cardId) {
+            const card = allCards.find(c => c.id === cardId);
+            if (card) {
+                // Passa l'oggetto carta alla funzione di rendering che ora gestisce sia Crea che Modifica
+                renderCreateView(card); 
+                currentView = 'edit'; // Imposta la vista su "edit" per prevenire re-render indesiderati
+            } else {
+                alertMessage("Carta non trovata nell'archivio.", 'danger');
+            }
+        }
+        
+        /** Gestisce l'eliminazione di una carta */
+        function handleDeleteCard(cardId) {
+            const cardToDelete = allCards.find(c => c.id === cardId);
+            if (!cardToDelete) return;
+
+            if (confirm(`Sei sicuro di voler eliminare la carta: ${marked.parseInline(cardToDelete.domanda).substring(0, 30)}...?`)) {
+                deleteCard(cardId).then(() => {
+                    // onSnapshot aggiornerà automaticamente l'archivio, ma torniamo subito per feedback
+                    showView('archive'); 
+                });
+            }
+        }
+
         function previewMarkdown(inputId, previewId) {
             const input = document.getElementById(inputId).value;
             const preview = document.getElementById(previewId);
@@ -467,37 +600,6 @@
             
             preview.innerHTML = marked.parse(input); 
             preview.classList.remove('hidden');
-        }
-
-        function handleCreateCard(event) {
-            const form = event.target;
-            const data = new FormData(form);
-
-            const today = new Date();
-            const tomorrow = getMidnightTimestamp(addDays(today, INTERVALS[0])); 
-
-            const newCard = {
-                id: Date.now(),
-                domanda: data.get('domanda').trim(),
-                risposta: data.get('risposta').trim(),
-                argomento: data.get('argomento').trim() || 'Generale',
-                livelloDiRipetizione: 1,
-                dataDiProssimoRipasso: tomorrow
-            };
-
-            try {
-                saveCard(newCard);
-                form.reset();
-                const previewDomanda = document.getElementById('preview-domanda');
-                const previewRisposta = document.getElementById('preview-risposta');
-                if (previewDomanda) previewDomanda.classList.add('hidden');
-                if (previewRisposta) previewRisposta.classList.add('hidden');
-                
-                alertMessage("Carta creata con successo! Dati sincronizzati nel cloud.", 'success');
-            } catch (e) {
-                console.error("Errore nel salvataggio della carta:", e);
-                alertMessage("Errore: impossibile salvare la carta nel database cloud.", 'danger');
-            }
         }
 
         function renderStatsView() {
@@ -605,7 +707,7 @@
             }, 5000);
         }
         
-        // --- NUOVA VISTA: AUTENTICAZIONE ---
+        // --- VISTA: AUTENTICAZIONE ---
 
         function renderAuthView() {
             const contentDiv = document.getElementById('app-content');
@@ -667,10 +769,8 @@
             const password = document.getElementById('register-password').value;
             
             try {
-                // Rimuoviamo la migrazione anonima, usiamo la creazione diretta
                 await firebaseApp.createUserWithEmailAndPassword(auth, email, password);
                 
-                // onAuthStateChanged gestirà l'aggiornamento UI
                 alertAuthMessage("Registrazione e accesso eseguiti con successo! Dati pronti per la sincronizzazione.", 'success');
                 showView('review'); 
             } catch (error) {
@@ -690,7 +790,6 @@
             const password = document.getElementById('login-password').value;
             
             try {
-                // Accede con le credenziali Email/Password
                 await firebaseApp.signInWithEmailAndPassword(auth, email, password);
 
                 alertAuthMessage("Accesso eseguito con successo! I tuoi dati cloud sono stati caricati.", 'success');
@@ -704,7 +803,6 @@
         async function handleLogout() {
             try {
                 await auth.signOut();
-                // Dopo il logout, onAuthStateChanged imposterà userId=null e showView forzerà il reindirizzamento al login.
                 alertMessage("Logout effettuato. Per favore, accedi di nuovo per vedere i tuoi dati.", 'success');
             } catch (error) {
                 console.error("Errore durante il logout:", error);
@@ -731,17 +829,14 @@
             db = firebaseApp.db;
             auth = firebaseApp.auth;
             
-            const initialAuthToken = null; // Rimosso l'uso del token
-
-            // L'autenticazione iniziale non avviene più qui, ma tramite il listener onAuthStateChanged
-            // per vedere se c'è un utente loggato dal browser.
+            const initialAuthToken = null; 
 
             // Listener per lo stato di autenticazione
             firebaseApp.onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     userId = user.uid;
                     isAuthReady = true;
-                    isAnonymous = user.isAnonymous || false; // Dovrebbe essere sempre false se l'anonimo è disabilitato
+                    isAnonymous = user.isAnonymous || false; 
                     
                     const status = userId ? "Autenticato con Email" : "Non loggato";
                     document.getElementById('user-info').textContent = `Utente ID: ${userId} | Stato: Portabile (Cloud)`;
@@ -749,16 +844,13 @@
                     await loadStats(); 
                     setupCardListener(); 
                 } else {
-                    // Nessun utente loggato (incluso anonimo, ora disabilitato)
                     userId = null;
-                    isAuthReady = true; // Pronto, ma non loggato
+                    isAuthReady = true;
                     isAnonymous = false;
                     document.getElementById('user-info').textContent = "Utente ID: NON LOGGATO";
-                    // Forza la visualizzazione della schermata di autenticazione
                     currentView = 'auth';
                 }
                 
-                // Mostra la vista (che ora sarà 'auth' se userId è null)
                 showView(currentView);
             });
         }
@@ -772,8 +864,13 @@
         window.handleCreateCard = handleCreateCard;
         window.previewMarkdown = previewMarkdown; 
         
-        // Nuove funzioni di autenticazione esposte
-        window.handleRegister = handleRegister; // Modificato da handleRegisterAnon
+        // Nuove funzioni di archivio
+        window.editCard = editCard;
+        window.handleSaveCard = handleSaveCard;
+        window.handleDeleteCard = handleDeleteCard;
+
+        // Funzioni di autenticazione esposte
+        window.handleRegister = handleRegister; 
         window.handleLogin = handleLogin;
         window.handleLogout = handleLogout;
         window.alertAuthMessage = alertAuthMessage; 
