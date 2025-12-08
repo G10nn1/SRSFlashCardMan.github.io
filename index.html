@@ -121,7 +121,8 @@
         // A. Dati Globali (Constants)
         const INTERVALS = [1, 3, 7, 16, 35];
 
-        // db and auth will be assigned in initApp from firebaseApp
+        let db;
+        let auth;
         let userId = null;
         let isAuthReady = false;
         let isAnonymous = false; 
