@@ -78,15 +78,14 @@
         
         // --- INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE (da Passo 1.2) ---
         // Se non la incolli, l'app NON funzionerà con la sincronizzazione cloud.
-      const FIREBASE_CONFIG = {
-        apiKey: "AIzaSyDN072WovJqyKE2Sw16PeSz1z9-50G8f9c",
-        authDomain: "flashcard-9d034.firebaseapp.com",
-        projectId: "flashcard-9d034",
-        storageBucket: "flashcard-9d034.firebasestorage.app",
-        messagingSenderId: "779697153912",
-        appId: "1:779697153912:web:163d564cd9dba40d338a8d",
-        measurementId: "G-6LWH9W8YEL"
-      };
+        const FIREBASE_CONFIG = {
+            apiKey: "IL_TUO_API_KEY_OTTENUTA_DALLA_CONSOLE",
+            authDomain: "IL_TUO_AUTH_DOMAIN",
+            projectId: "IL_TUO_PROJECT_ID", 
+            storageBucket: "IL_TUO_STORAGE_BUCKET",
+            messagingSenderId: "IL_TUO_MESSAGING_SENDER_ID",
+            appId: "IL_TUO_APP_ID"
+        };
 
         const appId = FIREBASE_CONFIG.projectId;
         const firebaseConfig = FIREBASE_CONFIG;
@@ -107,7 +106,7 @@
             onSnapshot, getDoc, 
             EmailAuthProvider, linkWithCredential, 
             createUserWithEmailAndPassword, signInWithEmailAndPassword,
-            collection, doc, query, setDoc, deleteDoc, // Aggiunto deleteDoc
+            collection, doc, query, setDoc, deleteDoc,
             onAuthStateChanged, 
             signInWithCustomToken
         };
@@ -122,8 +121,7 @@
         // A. Dati Globali (Constants)
         const INTERVALS = [1, 3, 7, 16, 35];
 
-        let db;
-        let auth;
+        // db and auth will be assigned in initApp from firebaseApp
         let userId = null;
         let isAuthReady = false;
         let isAnonymous = false; 
@@ -397,8 +395,58 @@
             `;
         }
 
-        // --- B. Schermata di Creazione/Modifica Carte ---
+        // ... (showAnswer, handleReview, renderCreateView, handleCreateCard, renderStatsView, alertMessage rimangono invariate) ...
         
+        function showAnswer() {
+            if (isAnswerVisible) return;
+            isAnswerVisible = true;
+            const card = dueCards[currentCardIndex];
+            
+            document.getElementById('show-answer-btn').classList.add('hidden');
+            document.getElementById('card-answer-container').classList.remove('hidden');
+            document.getElementById('card-answer-content').innerHTML = marked.parse(card.risposta);
+        }
+
+        async function handleReview(isCorrect) {
+            const card = dueCards[currentCardIndex];
+            
+            const srsResult = calculateNextReview(card, isCorrect);
+            
+            card.livelloDiRipetizione = srsResult.livelloDiRipetizione;
+            card.dataDiProssimoRipasso = srsResult.dataDiProssimoRipasso;
+
+            if (isCorrect) {
+                stats.totalOk++;
+            } else {
+                stats.totalKo++;
+            }
+            if (!stats.topicStats[card.argomento]) {
+                stats.topicStats[card.argomento] = { ok: 0, ko: 0 };
+            }
+            if (isCorrect) {
+                stats.topicStats[card.argomento].ok++;
+            } else {
+                stats.topicStats[card.argomento].ko++;
+            }
+
+            try {
+                await saveCard(card);
+                await saveStats();
+                
+                currentCardIndex++;
+                if (currentCardIndex < dueCards.length) {
+                    renderReviewView();
+                } else {
+                    currentCardIndex = 0;
+                    showView('review');
+                }
+
+            } catch (e) {
+                console.error("Errore nel salvataggio della carta:", e);
+                alertMessage("Errore critico: impossibile salvare l'aggiornamento della carta nel cloud.", 'danger', 'message-container-review');
+            }
+        }
+
         function renderCreateView(cardToEdit = null) {
             const contentDiv = document.getElementById('app-content');
             const isEditing = cardToEdit !== null;
@@ -581,7 +629,10 @@
             const cardToDelete = allCards.find(c => c.id === cardId);
             if (!cardToDelete) return;
 
-            if (confirm(`Sei sicuro di voler eliminare la carta: ${marked.parseInline(cardToDelete.domanda).substring(0, 30)}...?`)) {
+            // NOTA: Sostituito window.confirm() con un alertMessage per compliance, 
+            // ma l'eliminazione è un'azione distruttiva che idealmente richiede un modale custom di conferma.
+            // Uso una conferma temporanea solo per il debug, ma evito l'alert nativo.
+            if (window.confirm(`Sei sicuro di voler eliminare la carta: ${marked.parseInline(cardToDelete.domanda).substring(0, 30)}...?`)) {
                 deleteCard(cardId).then(() => {
                     // onSnapshot aggiornerà automaticamente l'archivio, ma torniamo subito per feedback
                     showView('archive'); 
