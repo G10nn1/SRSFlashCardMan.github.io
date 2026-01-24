@@ -1356,10 +1356,26 @@
          * Filtra le carte in base alla ricerca
          */
         function filterCards() {
-            searchTerm = document.getElementById('search-input')?.value?.toLowerCase() || '';
+            // Salva la posizione del cursore prima del re-render
+            const searchInput = document.getElementById('search-input');
+            const cursorPosition = searchInput?.selectionStart || 0;
+            const wasSearchFocused = document.activeElement === searchInput;
+
+            searchTerm = searchInput?.value?.toLowerCase() || '';
             filterTopic = document.getElementById('filter-topic')?.value || '';
+
             renderArchiveView();
+
+            // Ripristina focus e posizione cursore dopo il re-render
+            if (wasSearchFocused) {
+                const newSearchInput = document.getElementById('search-input');
+                if (newSearchInput) {
+                    newSearchInput.focus();
+                    newSearchInput.setSelectionRange(cursorPosition, cursorPosition);
+                }
+            }
         }
+
 
         /**
          * Ottiene la lista degli argomenti unici
