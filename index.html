@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="it">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +9,13 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Caricamento di Marked.js per il rendering del Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- DOMPurify per sanitizzazione XSS -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="description" content="App di flashcard con ripetizione spaziata (SRS) per memorizzare efficacemente">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <style>
         /* Stili Personalizzati */
         :root {
@@ -15,10 +23,12 @@
             --success-color: #10b981;
             --danger-color: #ef4444;
         }
+
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f3f4f6;
         }
+
         .card-content {
             min-height: 150px;
             text-align: left;
@@ -28,12 +38,37 @@
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
             border: 1px solid #e5e7eb;
         }
+
         /* Stile per il contenuto Markdown */
-        .card-content h1, .card-content h2 { font-size: 1.5em; margin-bottom: 0.5em; font-weight: 700; }
-        .card-content p { margin-bottom: 1em; line-height: 1.6; }
-        .card-content img { max-width: 100%; height: auto; border-radius: 0.5rem; margin: 1em 0; }
-        .card-content ul { list-style: disc; margin-left: 1.5em; padding-left: 0; }
-        .card-content strong { font-weight: 600; }
+        .card-content h1,
+        .card-content h2 {
+            font-size: 1.5em;
+            margin-bottom: 0.5em;
+            font-weight: 700;
+        }
+
+        .card-content p {
+            margin-bottom: 1em;
+            line-height: 1.6;
+        }
+
+        .card-content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 0.5rem;
+            margin: 1em 0;
+        }
+
+        .card-content ul {
+            list-style: disc;
+            margin-left: 1.5em;
+            padding-left: 0;
+        }
+
+        .card-content strong {
+            font-weight: 600;
+        }
+
         /* Stile specifico per l'archivio carte */
         .card-list-item:hover {
             background-color: #f3f4f6;
@@ -42,22 +77,32 @@
         }
     </style>
 </head>
+
 <body class="p-4 md:p-8">
 
     <!-- Contenitore Principale -->
     <div class="max-w-4xl mx-auto bg-white shadow-xl rounded-xl p-6 md:p-10">
         <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">SRS Cloud Flashcard Manager</h1>
-        
+
         <!-- User ID Display (Importante per il Debug Firestore) -->
         <p id="user-info" class="text-xs text-center text-gray-500 mb-4">Utente: In attesa di autenticazione...</p>
 
         <!-- Navigazione (Menu) -->
         <nav class="flex justify-center space-x-4 mb-8">
-            <button onclick="showView('review')" id="nav-review" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-blue-100 bg-blue-500 text-white">Ripasso Giornaliero</button>
-            <button onclick="showView('create')" id="nav-create" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Crea Nuova Carta</button>
-            <button onclick="showView('archive')" id="nav-archive" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Gestione Archivio</button>
-            <button onclick="showView('stats')" id="nav-stats" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Riepilogo & Statistiche</button>
-            <button onclick="showView('auth')" id="nav-auth" class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-yellow-100 text-yellow-700">Login/Logout</button>
+            <button onclick="showView('review')" id="nav-review"
+                class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-blue-100 bg-blue-500 text-white">Ripasso
+                Giornaliero</button>
+            <button onclick="showView('create')" id="nav-create"
+                class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Crea
+                Nuova Carta</button>
+            <button onclick="showView('archive')" id="nav-archive"
+                class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Gestione
+                Archivio</button>
+            <button onclick="showView('stats')" id="nav-stats"
+                class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Riepilogo
+                & Statistiche</button>
+            <button onclick="showView('auth')" id="nav-auth"
+                class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-yellow-100 text-yellow-700">Login/Logout</button>
         </nav>
 
         <!-- Area Contenuto Dinamico -->
@@ -71,11 +116,11 @@
         import { getAuth, signInWithCustomToken, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, EmailAuthProvider, linkWithCredential } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, query, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js"; 
-        
-        // Attiva il logging per facilitare il debug
-        setLogLevel('Debug');
-        
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+
+        // Debug logging disabilitato in produzione
+        // setLogLevel('Debug');
+
         // --- INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE (da Passo 1.2) ---
         // Se non la incolli, l'app NON funzionerà con la sincronizzazione cloud.
         const FIREBASE_CONFIG = {
@@ -96,19 +141,19 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
-        
+
         // Inizializzazione Analytics per evitare l'errore se la config la include
-        const analytics = getAnalytics(app); 
+        const analytics = getAnalytics(app);
 
 
         // Espone le funzioni e variabili necessarie
-        window.firebaseApp = { 
-            db, auth, 
-            onSnapshot, getDoc, 
-            EmailAuthProvider, linkWithCredential, 
+        window.firebaseApp = {
+            db, auth,
+            onSnapshot, getDoc,
+            EmailAuthProvider, linkWithCredential,
             createUserWithEmailAndPassword, signInWithEmailAndPassword,
             collection, doc, query, setDoc, deleteDoc,
-            onAuthStateChanged, 
+            onAuthStateChanged,
             signInWithCustomToken
         };
     </script>
@@ -118,7 +163,7 @@
         // CONFIGURAZIONE GLOBALE E MODELLO DATI
         const STORE_NAME = 'flashcards';
         const STATS_DOC_ID = 'global_stats';
-        
+
         // A. Dati Globali (Constants)
         const INTERVALS = [1, 3, 7, 16, 35];
 
@@ -126,13 +171,35 @@
         let auth;
         let userId = null;
         let isAuthReady = false;
-        let isAnonymous = false; 
+        let isAnonymous = false;
 
         let allCards = [];
         let dueCards = [];
         let currentCardIndex = 0;
         let currentView = 'review';
         let stats = { totalOk: 0, totalKo: 0, totalCards: 0, topicStats: {} };
+
+        // --- UTILITY PER SANITIZZAZIONE MARKDOWN ---
+
+        /**
+         * Sanitizza e renderizza Markdown in modo sicuro contro XSS
+         * @param {string} markdownText - Testo markdown da renderizzare
+         * @returns {string} - HTML sanitizzato
+         */
+        function safeMarkdown(markdownText) {
+            if (!markdownText) return '';
+            const rawHtml = marked.parse(markdownText);
+            return DOMPurify.sanitize(rawHtml);
+        }
+
+        /**
+         * Sanitizza e renderizza Markdown inline (senza wrapper p)
+         */
+        function safeMarkdownInline(markdownText) {
+            if (!markdownText) return '';
+            const rawHtml = marked.parseInline(markdownText);
+            return DOMPurify.sanitize(rawHtml);
+        }
 
         // --- UTILITY PER DATE E LOGICA SRS ---
 
@@ -178,7 +245,7 @@
             const appId = firebaseApp.FIREBASE_CONFIG ? firebaseApp.FIREBASE_CONFIG.projectId : 'default-app-id';
             return firebaseApp.doc(database, 'artifacts', appId, 'users', currentUserId, 'stats', STATS_DOC_ID);
         }
-        
+
         async function saveCard(card) {
             if (!userId) {
                 console.error("Tentativo di salvare la carta senza userId. Dati non salvati.");
@@ -218,7 +285,7 @@
                 throw error;
             }
         }
-        
+
         async function loadStats() {
             if (!userId) return;
             try {
@@ -240,7 +307,7 @@
          */
         function setupCardListener() {
             if (unsubscribeCards) {
-                unsubscribeCards(); 
+                unsubscribeCards();
             }
             if (!userId || !isAuthReady) return;
 
@@ -250,7 +317,7 @@
                 allCards = [];
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    data.dataDiProssimoRipasso = data.dataDiProssimoRipasso || 0; 
+                    data.dataDiProssimoRipasso = data.dataDiProssimoRipasso || 0;
                     allCards.push(data);
                 });
 
@@ -280,7 +347,7 @@
         function showView(viewName) {
             currentView = viewName;
             const contentDiv = document.getElementById('app-content');
-            
+
             document.querySelectorAll('nav button').forEach(btn => {
                 const isSelected = btn.id === `nav-${viewName}`;
                 btn.classList.toggle('bg-blue-500', isSelected);
@@ -288,7 +355,7 @@
                 btn.classList.toggle('hover:bg-blue-600', isSelected);
                 btn.classList.toggle('bg-gray-200', !isSelected && btn.id !== 'nav-auth');
                 btn.classList.toggle('text-gray-700', !isSelected && btn.id !== 'nav-auth');
-                
+
                 // Stile speciale per il pulsante Auth
                 if (btn.id === 'nav-auth') {
                     btn.classList.toggle('bg-yellow-400', isSelected);
@@ -302,7 +369,7 @@
             if (!isAuthReady || userId === null) {
                 // Se non è autenticato, forza la visualizzazione della schermata di autenticazione
                 if (viewName !== 'auth') {
-                     return showView('auth');
+                    return showView('auth');
                 }
             }
 
@@ -328,7 +395,7 @@
                     renderReviewView();
             }
         }
-        
+
         // A. Schermata di Ripasso Giornaliero - (Nessuna modifica alla logica di rendering)
 
         let isAnswerVisible = false;
@@ -336,7 +403,7 @@
         function renderReviewView() {
             // ... (funzione renderReviewView rimane invariata) ...
             const contentDiv = document.getElementById('app-content');
-            
+
             if (dueCards.length === 0) {
                 contentDiv.innerHTML = `
                     <div class="text-center p-8 bg-green-50 rounded-lg border border-green-200">
@@ -354,7 +421,7 @@
             const card = dueCards[currentCardIndex];
             isAnswerVisible = false;
 
-            const nextCardButtonHtml = (currentCardIndex < dueCards.length - 1) ? 
+            const nextCardButtonHtml = (currentCardIndex < dueCards.length - 1) ?
                 `<p class="text-sm text-gray-500 mt-4">Prossima carta: ${currentCardIndex + 2} di ${dueCards.length}</p>` :
                 `<p class="text-sm text-gray-500 mt-4">Questa è l'ultima carta del giorno!</p>`;
 
@@ -371,7 +438,7 @@
                     </div>
                     
                     <div id="card-question-content" class="card-content">
-                        ${marked.parse(card.domanda)}
+                        ${safeMarkdown(card.domanda)}
                     </div>
                     
                     <button id="show-answer-btn" onclick="showAnswer()" class="w-full mt-6 py-2 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition duration-150">
@@ -391,29 +458,31 @@
                                 <span class="text-xl mr-2">👍</span> OK (Corretta)
                             </button>
                         </div>
+                        <p class="text-xs text-gray-400 text-center mt-4">⌨️ Scorciatoie: <kbd class="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-gray-600">Spazio</kbd> mostra risposta · <kbd class="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-gray-600">←</kbd> KO · <kbd class="px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-gray-600">→</kbd> OK</p>
                     </div>
+
                 </div>
                 ${nextCardButtonHtml}
             `;
         }
 
         // ... (showAnswer, handleReview, renderCreateView, handleCreateCard, renderStatsView, alertMessage rimangono invariate) ...
-        
+
         function showAnswer() {
             if (isAnswerVisible) return;
             isAnswerVisible = true;
             const card = dueCards[currentCardIndex];
-            
+
             document.getElementById('show-answer-btn').classList.add('hidden');
             document.getElementById('card-answer-container').classList.remove('hidden');
-            document.getElementById('card-answer-content').innerHTML = marked.parse(card.risposta);
+            document.getElementById('card-answer-content').innerHTML = safeMarkdown(card.risposta);
         }
 
         async function handleReview(isCorrect) {
             const card = dueCards[currentCardIndex];
-            
+
             const srsResult = calculateNextReview(card, isCorrect);
-            
+
             card.livelloDiRipetizione = srsResult.livelloDiRipetizione;
             card.dataDiProssimoRipasso = srsResult.dataDiProssimoRipasso;
 
@@ -434,7 +503,7 @@
             try {
                 await saveCard(card);
                 await saveStats();
-                
+
                 currentCardIndex++;
                 if (currentCardIndex < dueCards.length) {
                     renderReviewView();
@@ -503,10 +572,10 @@
                 previewMarkdown('risposta', 'preview-risposta');
             }
         }
-        
+
         /** Wrapper per la creazione (dal menu principale) */
         function handleCreateCard() {
-             renderCreateView(null);
+            renderCreateView(null);
         }
 
         /** Gestisce il salvataggio o l'aggiornamento della carta */
@@ -587,7 +656,7 @@
             let listHtml = '';
             sortedCards.forEach(card => {
                 const nextReviewDate = new Date(card.dataDiProssimoRipasso).toLocaleDateString('it-IT');
-                const firstLine = marked.parseInline(card.domanda).replace(/<\/?[^>]+(>|$)/g, "").substring(0, 80) + '...';
+                const firstLine = safeMarkdownInline(card.domanda).replace(/<\/?[^>]+(>|$)/g, "").substring(0, 80) + '...';
 
                 listHtml += `
                     <div class="card-list-item p-4 mb-2 bg-white rounded-lg shadow cursor-pointer transition duration-150 ease-in-out border border-gray-100" onclick="editCard(${card.id})">
@@ -619,13 +688,13 @@
             const card = allCards.find(c => c.id === cardId);
             if (card) {
                 // Passa l'oggetto carta alla funzione di rendering che ora gestisce sia Crea che Modifica
-                renderCreateView(card); 
+                renderCreateView(card);
                 currentView = 'edit'; // Imposta la vista su "edit" per prevenire re-render indesiderati
             } else {
                 alertMessage("Carta non trovata nell'archivio.", 'danger');
             }
         }
-        
+
         /** Gestisce l'eliminazione di una carta */
         function handleDeleteCard(cardId) {
             const cardToDelete = allCards.find(c => c.id === cardId);
@@ -634,10 +703,10 @@
             // NOTA: Sostituito window.confirm() con un alertMessage per compliance, 
             // ma l'eliminazione è un'azione distruttiva che idealmente richiede un modale custom di conferma.
             // Uso una conferma temporanea solo per il debug, ma evito l'alert nativo.
-            if (window.confirm(`Sei sicuro di voler eliminare la carta: ${marked.parseInline(cardToDelete.domanda).substring(0, 30)}...?`)) {
+            if (window.confirm(`Sei sicuro di voler eliminare la carta: ${safeMarkdownInline(cardToDelete.domanda).substring(0, 30)}...?`)) {
                 deleteCard(cardId).then(() => {
                     // onSnapshot aggiornerà automaticamente l'archivio, ma torniamo subito per feedback
-                    showView('archive'); 
+                    showView('archive');
                 });
             }
         }
@@ -645,13 +714,13 @@
         function previewMarkdown(inputId, previewId) {
             const input = document.getElementById(inputId).value;
             const preview = document.getElementById(previewId);
-            
+
             if (input.trim() === '') {
                 preview.classList.add('hidden');
                 return;
             }
-            
-            preview.innerHTML = marked.parse(input); 
+
+            preview.innerHTML = safeMarkdown(input);
             preview.classList.remove('hidden');
         }
 
@@ -661,12 +730,12 @@
             const totalAttempts = stats.totalOk + stats.totalKo;
             const successRate = totalAttempts > 0 ? ((stats.totalOk / totalAttempts) * 100).toFixed(1) : '0.0';
             const dueToday = dueCards.length;
-            
+
             let topicRows = '';
             for (const [topic, topicStats] of Object.entries(stats.topicStats)) {
                 const topicAttempts = topicStats.ok + topicStats.ko;
                 const topicRate = topicAttempts > 0 ? ((topicStats.ok / topicAttempts) * 100).toFixed(1) : '0.0';
-                
+
                 topicRows += `
                     <tr>
                         <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${topic}</td>
@@ -725,7 +794,7 @@
             const container = document.getElementById('message-container') || document.getElementById('app-content');
             let bgColor, borderColor, textColor;
 
-            switch(type) {
+            switch (type) {
                 case 'success':
                     bgColor = 'bg-green-100';
                     borderColor = 'border-green-400';
@@ -748,24 +817,24 @@
                     <p>${message}</p>
                 </div>
             `;
-            
+
             const targetContainer = document.getElementById('message-container') || document.getElementById('app-content');
             targetContainer.insertAdjacentHTML('afterbegin', alertHtml);
             const alertElement = document.getElementById('temp-alert');
-            
+
             setTimeout(() => {
                 if (alertElement) {
                     alertElement.remove();
                 }
             }, 5000);
         }
-        
+
         // --- VISTA: AUTENTICAZIONE ---
 
         function renderAuthView() {
             const contentDiv = document.getElementById('app-content');
-            
-            let statusText = userId ? 
+
+            let statusText = userId ?
                 `<p class="text-green-600 font-semibold">Stato: Autenticato (Dati sincronizzati su tutti i dispositivi)</p>` :
                 `<p class="text-red-600 font-semibold">Stato: Disconnesso (Accedi o Registrati)</p>`;
 
@@ -820,12 +889,12 @@
         async function handleRegister(event) {
             const email = document.getElementById('register-email').value;
             const password = document.getElementById('register-password').value;
-            
+
             try {
                 await firebaseApp.createUserWithEmailAndPassword(auth, email, password);
-                
+
                 alertAuthMessage("Registrazione e accesso eseguiti con successo! Dati pronti per la sincronizzazione.", 'success');
-                showView('review'); 
+                showView('review');
             } catch (error) {
                 console.error("Errore di registrazione:", error);
                 if (error.code === 'auth/email-already-in-use') {
@@ -841,7 +910,7 @@
         async function handleLogin(event) {
             const email = document.getElementById('login-email').value;
             const password = document.getElementById('login-password').value;
-            
+
             try {
                 await firebaseApp.signInWithEmailAndPassword(auth, email, password);
 
@@ -862,7 +931,7 @@
                 alertMessage("Errore durante il logout.", 'danger');
             }
         }
-        
+
         function alertAuthMessage(message, type) {
             const container = document.getElementById('auth-message-container');
             if (container) {
@@ -881,21 +950,21 @@
 
             db = firebaseApp.db;
             auth = firebaseApp.auth;
-            
-            const initialAuthToken = null; 
+
+            const initialAuthToken = null;
 
             // Listener per lo stato di autenticazione
             firebaseApp.onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     userId = user.uid;
                     isAuthReady = true;
-                    isAnonymous = user.isAnonymous || false; 
-                    
+                    isAnonymous = user.isAnonymous || false;
+
                     const status = userId ? "Autenticato con Email" : "Non loggato";
                     document.getElementById('user-info').textContent = `Utente ID: ${userId} | Stato: Portabile (Cloud)`;
-                    
-                    await loadStats(); 
-                    setupCardListener(); 
+
+                    await loadStats();
+                    setupCardListener();
                 } else {
                     userId = null;
                     isAuthReady = true;
@@ -903,30 +972,72 @@
                     document.getElementById('user-info').textContent = "Utente ID: NON LOGGATO";
                     currentView = 'auth';
                 }
-                
+
                 showView(currentView);
             });
         }
 
         window.onload = initApp;
 
+        // --- KEYBOARD SHORTCUTS PER REVIEW VELOCE ---
+        document.addEventListener('keydown', function (event) {
+            // Solo nella vista review
+            if (currentView !== 'review' || dueCards.length === 0) return;
+
+            // Ignora se siamo in un input o textarea
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+
+            switch (event.code) {
+                case 'Space':
+                    event.preventDefault();
+                    if (!isAnswerVisible) {
+                        showAnswer();
+                    }
+                    break;
+                case 'Digit1':
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    if (isAnswerVisible) {
+                        handleReview(false); // KO
+                    }
+                    break;
+                case 'Digit2':
+                case 'ArrowRight':
+                    event.preventDefault();
+                    if (isAnswerVisible) {
+                        handleReview(true); // OK
+                    }
+                    break;
+            }
+        });
+
+        // --- REGISTRAZIONE SERVICE WORKER PER PWA ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('[PWA] Service Worker registrato:', reg.scope))
+                    .catch(err => console.warn('[PWA] Registrazione Service Worker fallita:', err));
+            });
+        }
+
         /** Rende le funzioni globalmente accessibili per gli attributi onclick nell'HTML */
         window.showView = showView;
         window.showAnswer = showAnswer;
         window.handleReview = handleReview;
         window.handleCreateCard = handleCreateCard;
-        window.previewMarkdown = previewMarkdown; 
-        
+        window.previewMarkdown = previewMarkdown;
+
         // Nuove funzioni di archivio
         window.editCard = editCard;
         window.handleSaveCard = handleSaveCard;
         window.handleDeleteCard = handleDeleteCard;
 
         // Funzioni di autenticazione esposte
-        window.handleRegister = handleRegister; 
+        window.handleRegister = handleRegister;
         window.handleLogin = handleLogin;
         window.handleLogout = handleLogout;
         window.alertAuthMessage = alertAuthMessage; 
     </script>
 </body>
+
 </html>
