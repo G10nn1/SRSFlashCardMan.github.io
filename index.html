@@ -17,26 +17,53 @@
     <meta name="description" content="App di flashcard con ripetizione spaziata (SRS) per memorizzare efficacemente">
     <link rel="apple-touch-icon" href="icon-192.png">
     <style>
-        /* Stili Personalizzati */
+        /* Stili Personalizzati con supporto Dark Mode */
         :root {
             --primary-color: #3b82f6;
             --success-color: #10b981;
             --danger-color: #ef4444;
+            --bg-primary: #f3f4f6;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f9fafb;
+            --text-primary: #1f2937;
+            --text-secondary: #4b5563;
+            --text-muted: #9ca3af;
+            --border-color: #e5e7eb;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+            --card-bg: #ffffff;
+            --input-bg: #ffffff;
+        }
+
+        .dark {
+            --bg-primary: #111827;
+            --bg-secondary: #1f2937;
+            --bg-tertiary: #374151;
+            --text-primary: #f9fafb;
+            --text-secondary: #d1d5db;
+            --text-muted: #6b7280;
+            --border-color: #374151;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --card-bg: #1f2937;
+            --input-bg: #374151;
         }
 
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f3f4f6;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
 
         .card-content {
             min-height: 150px;
             text-align: left;
             padding: 1.5rem;
-            background: #ffffff;
+            background: var(--card-bg);
             border-radius: 0.75rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-            border: 1px solid #e5e7eb;
+            box-shadow: 0 4px 6px -1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            transition: background-color 0.3s ease;
         }
 
         /* Stile per il contenuto Markdown */
@@ -70,17 +97,104 @@
         }
 
         /* Stile specifico per l'archivio carte */
+        .card-list-item {
+            background-color: var(--card-bg);
+            border-color: var(--border-color);
+            transition: all 0.2s ease;
+        }
+
         .card-list-item:hover {
-            background-color: #f3f4f6;
+            background-color: var(--bg-tertiary);
             transform: scale(1.01);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 15px -3px var(--shadow-color);
+        }
+
+        /* Dark mode override per Tailwind classes */
+        .dark .bg-white {
+            background-color: var(--bg-secondary) !important;
+        }
+
+        .dark .bg-gray-50 {
+            background-color: var(--bg-tertiary) !important;
+        }
+
+        .dark .bg-gray-100 {
+            background-color: var(--bg-tertiary) !important;
+        }
+
+        .dark .bg-gray-200 {
+            background-color: #4b5563 !important;
+        }
+
+        .dark .text-gray-800 {
+            color: var(--text-primary) !important;
+        }
+
+        .dark .text-gray-700 {
+            color: var(--text-secondary) !important;
+        }
+
+        .dark .text-gray-600 {
+            color: var(--text-secondary) !important;
+        }
+
+        .dark .text-gray-500 {
+            color: var(--text-muted) !important;
+        }
+
+        .dark .text-gray-400 {
+            color: var(--text-muted) !important;
+        }
+
+        .dark .border-gray-300,
+        .dark .border-gray-200,
+        .dark .border-gray-100 {
+            border-color: var(--border-color) !important;
+        }
+
+        .dark input,
+        .dark textarea {
+            background-color: var(--input-bg) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--border-color) !important;
+        }
+
+        .dark .shadow-xl {
+            box-shadow: 0 20px 25px -5px var(--shadow-color), 0 8px 10px -6px var(--shadow-color) !important;
+        }
+
+        /* Theme toggle button */
+        .theme-toggle {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 50;
+            padding: 0.5rem;
+            border-radius: 9999px;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px var(--shadow-color);
+        }
+
+        .theme-toggle:hover {
+            transform: scale(1.1);
         }
     </style>
+
 </head>
 
 <body class="p-4 md:p-8">
 
+    <!-- Theme Toggle Button -->
+    <button id="theme-toggle" class="theme-toggle" onclick="toggleTheme()" title="Cambia tema">
+        <span id="theme-icon-light" class="text-xl">🌙</span>
+        <span id="theme-icon-dark" class="text-xl hidden">☀️</span>
+    </button>
+
     <!-- Contenitore Principale -->
+
     <div class="max-w-4xl mx-auto bg-white shadow-xl rounded-xl p-6 md:p-10">
         <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">SRS Cloud Flashcard Manager</h1>
 
@@ -641,13 +755,32 @@
                     <div class="text-center p-8 bg-blue-50 rounded-lg border border-blue-200">
                         <h2 class="text-xl font-semibold text-blue-800 mt-3">Archivio Vuoto</h2>
                         <p class="text-blue-700 mt-1">Non hai ancora inserito nessuna flashcard. Vai alla schermata "Crea Nuova Carta" per iniziare!</p>
+                        <button onclick="openImportDialog()" class="mt-4 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition">
+                            📂 Importa Carte da File
+                        </button>
                     </div>
                 `;
                 return;
             }
 
+            // Ottieni argomenti unici per il filtro
+            const topics = getUniqueTopics();
+            const topicOptions = topics.map(t =>
+                `<option value="${t}" ${filterTopic === t ? 'selected' : ''}>${t}</option>`
+            ).join('');
+
+            // Filtra le carte in base a ricerca e argomento
+            let filteredCards = allCards.filter(card => {
+                const matchesSearch = !searchTerm ||
+                    card.domanda.toLowerCase().includes(searchTerm) ||
+                    card.risposta.toLowerCase().includes(searchTerm) ||
+                    card.argomento.toLowerCase().includes(searchTerm);
+                const matchesTopic = !filterTopic || card.argomento === filterTopic;
+                return matchesSearch && matchesTopic;
+            });
+
             // Ordina le carte per argomento e poi per livello di ripasso
-            const sortedCards = allCards.sort((a, b) => {
+            const sortedCards = filteredCards.sort((a, b) => {
                 if (a.argomento < b.argomento) return -1;
                 if (a.argomento > b.argomento) return 1;
                 return a.livelloDiRipetizione - b.livelloDiRipetizione;
@@ -659,10 +792,10 @@
                 const firstLine = safeMarkdownInline(card.domanda).replace(/<\/?[^>]+(>|$)/g, "").substring(0, 80) + '...';
 
                 listHtml += `
-                    <div class="card-list-item p-4 mb-2 bg-white rounded-lg shadow cursor-pointer transition duration-150 ease-in-out border border-gray-100" onclick="editCard(${card.id})">
+                    <div class="card-list-item p-4 mb-2 rounded-lg shadow cursor-pointer transition duration-150 ease-in-out border" onclick="editCard(${card.id})">
                         <div class="flex justify-between items-center">
                             <div>
-                                <p class="text-sm font-semibold text-gray-800">${firstLine}</p>
+                                <p class="text-sm font-semibold">${firstLine}</p>
                                 <p class="text-xs text-gray-500">Argomento: ${card.argomento}</p>
                             </div>
                             <div class="text-right flex flex-col items-end">
@@ -674,14 +807,47 @@
                 `;
             });
 
+            if (sortedCards.length === 0) {
+                listHtml = `
+                    <div class="text-center p-6 text-gray-500">
+                        <p>Nessuna carta trovata con i filtri selezionati.</p>
+                    </div>
+                `;
+            }
+
             contentDiv.innerHTML = `
-                <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Archivio Completo (${allCards.length} Carte)</h2>
-                <div class="space-y-3 max-h-[60vh] overflow-y-auto">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Archivio Completo (${allCards.length} Carte)</h2>
+                
+                <!-- Toolbar: Ricerca, Filtri, Import/Export -->
+                <div class="flex flex-wrap gap-3 mb-4 items-center">
+                    <div class="flex-1 min-w-[200px]">
+                        <input type="text" id="search-input" placeholder="🔍 Cerca nelle carte..." 
+                            value="${searchTerm}"
+                            oninput="filterCards()"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <select id="filter-topic" onchange="filterCards()" 
+                        class="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Tutti gli argomenti</option>
+                        ${topicOptions}
+                    </select>
+                    <button onclick="exportCards()" class="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm">
+                        📤 Esporta
+                    </button>
+                    <button onclick="openImportDialog()" class="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm">
+                        📥 Importa
+                    </button>
+                </div>
+
+                ${(searchTerm || filterTopic) ? `<p class="text-sm text-gray-500 mb-2">Mostrate ${sortedCards.length} di ${allCards.length} carte</p>` : ''}
+                
+                <div class="space-y-3 max-h-[55vh] overflow-y-auto">
                     ${listHtml}
                 </div>
                 <div id="message-container" class="mt-4"></div>
             `;
         }
+
 
         /** Funzione per trovare e passare la carta alla vista di modifica */
         function editCard(cardId) {
@@ -1036,7 +1202,175 @@
         window.handleRegister = handleRegister;
         window.handleLogin = handleLogin;
         window.handleLogout = handleLogout;
-        window.alertAuthMessage = alertAuthMessage; 
+        window.alertAuthMessage = alertAuthMessage;
+
+        // --- DARK MODE ---
+
+        /**
+         * Inizializza il tema all'avvio dell'app
+         */
+        function initTheme() {
+            const savedTheme = localStorage.getItem('srs-theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+            if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+                document.documentElement.classList.add('dark');
+                updateThemeIcon(true);
+            } else {
+                document.documentElement.classList.remove('dark');
+                updateThemeIcon(false);
+            }
+        }
+
+        /**
+         * Toggle del tema chiaro/scuro
+         */
+        function toggleTheme() {
+            const isDark = document.documentElement.classList.toggle('dark');
+            localStorage.setItem('srs-theme', isDark ? 'dark' : 'light');
+            updateThemeIcon(isDark);
+        }
+
+        /**
+         * Aggiorna l'icona del toggle
+         */
+        function updateThemeIcon(isDark) {
+            const lightIcon = document.getElementById('theme-icon-light');
+            const darkIcon = document.getElementById('theme-icon-dark');
+            if (lightIcon && darkIcon) {
+                lightIcon.classList.toggle('hidden', isDark);
+                darkIcon.classList.toggle('hidden', !isDark);
+            }
+        }
+
+        // Inizializza tema subito (prima del DOM load per evitare flash)
+        initTheme();
+
+        window.toggleTheme = toggleTheme;
+
+        // --- IMPORT/EXPORT DATI ---
+
+        /**
+         * Esporta tutte le carte in un file JSON
+         */
+        function exportCards() {
+            if (allCards.length === 0) {
+                alertMessage('Nessuna carta da esportare.', 'danger');
+                return;
+            }
+
+            const exportData = {
+                version: '1.0',
+                exportDate: new Date().toISOString(),
+                totalCards: allCards.length,
+                cards: allCards
+            };
+
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `srs-flashcards-backup-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            alertMessage(`Esportate ${allCards.length} carte con successo!`, 'success');
+        }
+
+        /**
+         * Apre il file picker per importare carte
+         */
+        function openImportDialog() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    importCards(file);
+                }
+            };
+            input.click();
+        }
+
+        /**
+         * Importa carte da file JSON
+         */
+        async function importCards(file) {
+            try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+
+                // Validazione base
+                if (!data.cards || !Array.isArray(data.cards)) {
+                    throw new Error('Formato file non valido: manca array "cards"');
+                }
+
+                let imported = 0;
+                let skipped = 0;
+
+                for (const card of data.cards) {
+                    // Validazione carta
+                    if (!card.domanda || !card.risposta) {
+                        skipped++;
+                        continue;
+                    }
+
+                    // Genera nuovo ID per evitare conflitti
+                    const newCard = {
+                        id: Date.now() + imported,
+                        domanda: card.domanda,
+                        risposta: card.risposta,
+                        argomento: card.argomento || 'Importato',
+                        livelloDiRipetizione: card.livelloDiRipetizione || 1,
+                        dataDiProssimoRipasso: card.dataDiProssimoRipasso || getMidnightTimestamp(new Date())
+                    };
+
+                    await saveCard(newCard);
+                    imported++;
+
+                    // Piccola pausa per non sovraccaricare Firebase
+                    await new Promise(r => setTimeout(r, 50));
+                }
+
+                alertMessage(`Importate ${imported} carte! ${skipped > 0 ? `(${skipped} saltate per errori)` : ''}`, 'success');
+                showView('archive');
+
+            } catch (error) {
+                console.error('Errore import:', error);
+                alertMessage(`Errore durante l'import: ${error.message}`, 'danger');
+            }
+        }
+
+        window.exportCards = exportCards;
+        window.openImportDialog = openImportDialog;
+
+        // --- RICERCA ARCHIVIO ---
+
+        let searchTerm = '';
+        let filterTopic = '';
+
+        /**
+         * Filtra le carte in base alla ricerca
+         */
+        function filterCards() {
+            searchTerm = document.getElementById('search-input')?.value?.toLowerCase() || '';
+            filterTopic = document.getElementById('filter-topic')?.value || '';
+            renderArchiveView();
+        }
+
+        /**
+         * Ottiene la lista degli argomenti unici
+         */
+        function getUniqueTopics() {
+            const topics = new Set(allCards.map(c => c.argomento));
+            return Array.from(topics).sort();
+        }
+
+        window.filterCards = filterCards;
+
     </script>
 </body>
 
