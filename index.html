@@ -203,8 +203,10 @@
 
         <!-- Navigazione (Menu) -->
         <nav class="flex justify-center space-x-4 mb-8">
+            <button onclick="showView('dashboard')" id="nav-dashboard"
+                class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-purple-100 text-purple-700">Dashboard</button>
             <button onclick="showView('review')" id="nav-review"
-                class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-blue-100 bg-blue-500 text-white">Ripasso
+                class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-blue-100 text-blue-700">Ripasso
                 Giornaliero</button>
             <button onclick="showView('create')" id="nav-create"
                 class="px-4 py-2 text-sm font-medium rounded-lg transition duration-150 hover:bg-gray-200 text-gray-700">Crea
@@ -290,7 +292,7 @@
         let allCards = [];
         let dueCards = [];
         let currentCardIndex = 0;
-        let currentView = 'review';
+        let currentView = 'dashboard';
         let stats = { totalOk: 0, totalKo: 0, totalCards: 0, topicStats: {} };
 
         // --- UTILITY PER SANITIZZAZIONE MARKDOWN ---
@@ -445,7 +447,7 @@
                 stats.totalCards = allCards.length;
 
                 // Aggiorna solo la vista se non siamo nel mezzo di una modifica
-                if (currentView !== 'edit' && (currentView === 'review' || currentView === 'stats' || currentView === 'archive')) {
+                if (currentView !== 'edit' && (currentView === 'review' || currentView === 'stats' || currentView === 'archive' || currentView === 'dashboard')) {
                     showView(currentView);
                 }
                 console.log(`[Firestore] Carte caricate/aggiornate: ${allCards.length}, Dovute oggi: ${dueCards.length}`);
@@ -498,6 +500,9 @@
             contentDiv.innerHTML = '<div class="flex justify-center items-center h-48"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div></div>';
 
             switch (viewName) {
+                case 'dashboard':
+                    renderDashboardView();
+                    break;
                 case 'review':
                     renderReviewView();
                     break;
@@ -517,11 +522,107 @@
                     renderLandingView();
                     break;
                 default:
-                    renderReviewView();
+                    renderDashboardView();
             }
         }
 
-        // A. Schermata di Ripasso Giornaliero - (Nessuna modifica alla logica di rendering)
+
+
+        // --- NEW: DASHBOARD VIEW (REQ-001, REQ-002, REQ-003) ---
+
+        function renderDashboardView() {
+            const contentDiv = document.getElementById('app-content');
+            const totalDue = dueCards.length;
+            const totalCards = allCards.length;
+
+            let mainActionHtml = '';
+            let secondaryActionHtml = '';
+
+            // UC-02 & REQ-003: Stato Vuoto (Nessuna carta nel sistema)
+            if (totalCards === 0) {
+                mainActionHtml = `
+                    <div class="text-center py-10">
+                        <div class="mb-6 flex justify-center">
+                            <span class="text-6xl">🌱</span>
+                        </div>
+                        <h2 class="text-2xl font-bold text-gray-800 mb-2">Benvenuto in SRS Flashcard!</h2>
+                        <p class="text-gray-600 mb-8 max-w-md mx-auto">Non hai ancora nessuna carta. Per iniziare a memorizzare, crea la tua prima flashcard.</p>
+                        
+                        <button onclick="showView('create')" class="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white text-lg font-bold rounded-xl shadow-lg transition transform hover:scale-105 flex items-center justify-center mx-auto">
+                            <span class="mr-2 text-2xl">+</span> Aggiungi la tua prima Card
+                        </button>
+                    </div>
+                `;
+            }
+            // UC-01 & REQ-001: Card in Scadenza presenti
+            else if (totalDue > 0) {
+                mainActionHtml = `
+                    <div class="text-center py-8">
+                        <h2 class="text-3xl font-bold text-gray-800 mb-2">È ora di ripassare!</h2>
+                        <p class="text-gray-600 mb-8">Hai card che richiedono la tua attenzione oggi.</p>
+                        
+                        <button onclick="showView('review')" class="relative px-10 py-5 bg-blue-600 hover:bg-blue-700 text-white text-xl font-bold rounded-2xl shadow-xl transition transform hover:scale-105 flex items-center justify-center mx-auto ring-4 ring-blue-100">
+                            <span>🚀 Inizia a studiare</span>
+                            <!-- REQ-002: Indicatore numerico -->
+                            <span class="absolute -top-3 -right-3 bg-red-500 text-white text-sm font-bold px-3 py-1 rounded-full shadow-md border-2 border-white animate-pulse">
+                                ${totalDue} in scadenza
+                            </span>
+                        </button>
+
+                        <div class="mt-8">
+                            <button onclick="showView('create')" class="px-6 py-2 bg-transparent hover:bg-gray-100 text-gray-600 font-medium rounded-lg border-2 border-dashed border-gray-300 transition">
+                                + Aggiungi nuova Card
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            // Nessuna Card in Scadenza (Tutto completato per oggi)
+            else {
+                mainActionHtml = `
+                    <div class="text-center py-10">
+                        <div class="mb-6 flex justify-center">
+                            <span class="text-6xl">🎉</span>
+                        </div>
+                        <h2 class="text-2xl font-bold text-green-700 mb-2">Tutto fatto per oggi!</h2>
+                        <p class="text-gray-600 mb-8">Hai completato tutti i ripassi in programma. Ottimo lavoro!</p>
+                        
+                        <div class="flex flex-col md:flex-row gap-4 justify-center">
+                            <button disabled class="px-8 py-3 bg-gray-200 text-gray-400 font-bold rounded-xl cursor-not-allowed">
+                                ✅ Nessuna card da studiare
+                            </button>
+                            
+                            <button onclick="showView('create')" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition transform hover:scale-105">
+                                + Aggiungi Card
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            contentDiv.innerHTML = `
+                <div class="max-w-3xl mx-auto">
+                    ${mainActionHtml}
+                    
+                    <!-- Stats Rapide -->
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-12 pt-8 border-t border-gray-100 text-center">
+                        <div class="p-4 rounded-lg bg-gray-50">
+                            <span class="block text-2xl font-bold text-gray-800">${totalCards}</span>
+                            <span class="text-xs text-gray-500 uppercase tracking-wide">Totale Card</span>
+                        </div>
+                         <div class="p-4 rounded-lg bg-gray-50">
+                            <span class="block text-2xl font-bold text-green-600">${stats.totalOk}</span>
+                            <span class="text-xs text-gray-500 uppercase tracking-wide">Risposte OK</span>
+                        </div>
+                         <div class="p-4 rounded-lg bg-gray-50 hidden md:block">
+                            <span class="block text-2xl font-bold text-blue-600">${Object.keys(stats.topicStats).length}</span>
+                            <span class="text-xs text-gray-500 uppercase tracking-wide">Argomenti</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
 
         let isAnswerVisible = false;
 
@@ -631,10 +732,10 @@
 
                 currentCardIndex++;
                 if (currentCardIndex < dueCards.length) {
-                    renderReviewView();
+                    showView('dashboard');
                 } else {
                     currentCardIndex = 0;
-                    showView('review');
+                    showView('dashboard');
                 }
 
             } catch (e) {
@@ -1071,7 +1172,7 @@
                 await firebaseApp.createUserWithEmailAndPassword(auth, email, password);
 
                 alertAuthMessage("Registrazione e accesso eseguiti con successo! Dati pronti per la sincronizzazione.", 'success');
-                showView('review');
+                showView('dashboard');
             } catch (error) {
                 console.error("Errore di registrazione:", error);
                 if (error.code === 'auth/email-already-in-use') {
@@ -1092,7 +1193,7 @@
                 await firebaseApp.signInWithEmailAndPassword(auth, email, password);
 
                 alertAuthMessage("Accesso eseguito con successo! I tuoi dati cloud sono stati caricati.", 'success');
-                showView('review'); // Sposta alla schermata di ripasso
+                showView('dashboard'); // Sposta alla Dashboard
             } catch (error) {
                 console.error("Errore di login:", error);
                 alertAuthMessage("Accesso fallito. Email o password errate.", 'danger');
