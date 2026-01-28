@@ -339,11 +339,65 @@
         let isAuthReady = false;
         let isAnonymous = false;
 
+
         let allCards = [];
         let dueCards = [];
         let currentCardIndex = 0;
         let currentView = 'dashboard';
-        let stats = { totalOk: 0, totalKo: 0, totalCards: 0, topicStats: {} };
+        let stats = {
+            totalOk: 0,
+            totalKo: 0,
+            totalCards: 0,
+            topicStats: {},
+            streak: { current: 0, lastActiveDate: null },
+            daily: { date: null, count: 0 }
+        };
+
+        // --- DEMO MODE DATA & STATE ---
+        let isDemoMode = false;
+        const DEMO_CARDS = [
+            {
+                id: 'demo-1',
+                argomento: 'Geografia',
+                domanda: 'Qual è la capitale della **Francia**?',
+                risposta: 'La capitale della Francia è **Parigi**.',
+                livelloDiRipetizione: 1,
+                dataDiProssimoRipasso: 0
+            },
+            {
+                id: 'demo-2',
+                argomento: 'Inglese',
+                domanda: 'Come si traduce la parola *"Book"* in italiano?',
+                risposta: 'Book significa **Libro**.',
+                livelloDiRipetizione: 1,
+                dataDiProssimoRipasso: 0
+            },
+            {
+                id: 'demo-3',
+                argomento: 'Scienza',
+                domanda: 'Quale pianeta è conosciuto come il *Pianeta Rosso*?',
+                risposta: '**Marte** è il Pianeta Rosso.',
+                livelloDiRipetizione: 1,
+                dataDiProssimoRipasso: 0
+            },
+            {
+                id: 'demo-4',
+                argomento: 'Storia',
+                domanda: 'In che anno è caduto il Muro di Berlino?',
+                risposta: 'Nel **1989** (9 novembre).',
+                livelloDiRipetizione: 1,
+                dataDiProssimoRipasso: 0
+            },
+            {
+                id: 'demo-5',
+                argomento: 'Matematica',
+                domanda: 'Quanto fa 7 x 8?',
+                risposta: '**56**',
+                livelloDiRipetizione: 1,
+                dataDiProssimoRipasso: 0
+            }
+        ];
+
 
         // --- UTILITY PER SANITIZZAZIONE MARKDOWN ---
 
@@ -654,8 +708,28 @@
                 <div class="max-w-3xl mx-auto">
                     ${mainActionHtml}
                     
+
+                    <!-- REQ-001 (Task 3): Gamification Widget -->
+                    <div class="mt-8 bg-white rounded-xl shadow border border-gray-100 p-4 flex flex-col md:flex-row justify-around items-center space-y-4 md:space-y-0 text-center">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-3xl">🔥</span>
+                            <div class="text-left">
+                                <p class="text-sm text-gray-500 uppercase font-bold tracking-wider">Streak</p>
+                                <p class="text-xl font-extrabold text-orange-500">${stats.streak?.current || 0} giorni</p>
+                            </div>
+                        </div>
+                        <div class="h-10 w-px bg-gray-200 hidden md:block"></div>
+                        <div class="flex items-center space-x-3">
+                            <span class="text-3xl">✅</span>
+                            <div class="text-left">
+                                <p class="text-sm text-gray-500 uppercase font-bold tracking-wider">Oggi</p>
+                                <p class="text-xl font-extrabold text-green-600">${stats.daily?.date === getMidnightTimestamp(new Date()) ? stats.daily.count : 0} carte</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Stats Rapide -->
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-12 pt-8 border-t border-gray-100 text-center">
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-8 pt-8 border-t border-gray-100 text-center">
                         <div class="p-4 rounded-lg bg-gray-50">
                             <span class="block text-2xl font-bold text-gray-800">${totalCards}</span>
                             <span class="text-xs text-gray-500 uppercase tracking-wide">Totale Card</span>
@@ -754,9 +828,62 @@
             document.getElementById('card-answer-content').innerHTML = safeMarkdown(card.risposta);
         }
 
-        async function handleReview(isCorrect) {
-            const card = dueCards[currentCardIndex];
 
+        function startDemo() {
+            isDemoMode = true;
+            userId = 'guest-demo'; // Fake ID for UI logic
+            allCards = [...DEMO_CARDS];
+            // In demo mode, force all cards to be 'due' immediately
+            dueCards = [...DEMO_CARDS];
+            currentCardIndex = 0;
+
+            // Reset temporary stats for demo
+            stats = {
+                totalOk: 0,
+                totalKo: 0,
+                totalCards: DEMO_CARDS.length,
+                topicStats: {},
+                streak: { current: 1, lastActiveDate: getMidnightTimestamp(new Date()) }, // Fake streak for motivation
+                daily: { date: null, count: 0 }
+            };
+
+            showView('review');
+            alertMessage('Modalità Demo Attiva: I progressi non verranno salvati.', 'success', 'app-content');
+        }
+
+        async function handleReview(isCorrect) {
+            if (isDemoMode) {
+                // --- LOGICA DEMO ---
+                if (isCorrect) stats.totalOk++;
+                else stats.totalKo++;
+
+                currentCardIndex++;
+                if (currentCardIndex < dueCards.length) {
+                    showView('review');
+                } else {
+                    // END OF DEMO
+                    const contentDiv = document.getElementById('app-content');
+                    contentDiv.innerHTML = `
+                        <div class="max-w-md mx-auto p-8 bg-blue-50 rounded-xl shadow-lg border border-blue-200 text-center mt-10">
+                            <div class="text-6xl mb-4">🏆</div>
+                            <h2 class="text-3xl font-bold text-gray-800 mb-4">Demo Completata!</h2>
+                            <p class="text-lg text-gray-700 mb-6">Ti è piaciuto il metodo SRS?</p>
+                            <p class="text-gray-600 mb-8">Registrati ora per salvare i tuoi progressi, creare le tue carte personalizzate e sincronizzarle su tutti i tuoi dispositivi.</p>
+                            
+                            <button onclick="showView('auth')" class="w-full py-4 bg-green-500 text-white font-bold text-xl rounded-xl shadow-md hover:bg-green-600 transition transform hover:scale-105 mb-4">
+                                Iscriviti Gratuitamente
+                            </button>
+                            <button onclick="window.location.reload()" class="text-sm text-gray-500 hover:text-gray-700 underline">
+                                Torna alla Home
+                            </button>
+                        </div>
+                    `;
+                }
+                return;
+            }
+
+            // --- LOGICA ORIGINALE (PROD) CON GAMIFICATION ---
+            const card = dueCards[currentCardIndex];
             const srsResult = calculateNextReview(card, isCorrect);
 
             card.livelloDiRipetizione = srsResult.livelloDiRipetizione;
@@ -767,6 +894,42 @@
             } else {
                 stats.totalKo++;
             }
+
+            // GAMIFICATION LOGIC (Streak & Daily)
+            const today = getMidnightTimestamp(new Date());
+
+            // 1. Daily Counter
+            if (stats.daily?.date !== today) {
+                stats.daily = { date: today, count: 0 };
+            }
+            if (isCorrect) { // Count only correct reviews or all reviews? Usually all completed efforts or just correct. Let's count all completed reviews for daily activity, or just correct? Request says "completate con successo" -> Correct.
+                stats.daily.count++;
+            }
+
+            // 2. Streak
+            // Logic: Increment streak if correct answer AND last active was yesterday (or today).
+            // Request: "consecutive days user mark as Correct at least one card".
+            if (isCorrect) {
+                const lastActive = stats.streak?.lastActiveDate;
+                const yesterday = getMidnightTimestamp(addDays(today, -1)); // today - 1 day
+
+                if (!lastActive) {
+                    // First time ever
+                    stats.streak = { current: 1, lastActiveDate: today };
+                } else if (lastActive === today) {
+                    // Already active today, maintain streak
+                    stats.streak.lastActiveDate = today;
+                } else if (lastActive === yesterday) {
+                    // Continuation
+                    stats.streak.current++;
+                    stats.streak.lastActiveDate = today;
+                } else {
+                    // Broken streak
+                    stats.streak = { current: 1, lastActiveDate: today };
+                }
+            }
+
+
             if (!stats.topicStats[card.argomento]) {
                 stats.topicStats[card.argomento] = { ok: 0, ko: 0 };
             }
@@ -793,6 +956,7 @@
                 alertMessage("Errore critico: impossibile salvare l'aggiornamento della carta nel cloud.", 'danger', 'message-container-review');
             }
         }
+
 
         function renderCreateView(cardToEdit = null) {
             const contentDiv = document.getElementById('app-content');
@@ -1301,10 +1465,18 @@
                 <div class="py-12 px-4 md:px-0 text-center">
                     <!-- Hero Section Minimized -->
                     <div class="mb-16">
-                        <h2 class="text-4xl md:text-5xl font-bold text-gray-900 mb-6 tracking-tight">Memorizza. Per sempre.</h2>
-                        <button onclick="showView('auth')" class="px-8 py-3 bg-black text-white text-lg font-bold rounded-none hover:bg-gray-800 transition duration-300">
-                            INIZIA ORA
-                        </button>
+                        <h2 class="text-4xl md:text-6xl font-extrabold text-gray-900 mb-4 tracking-tight">SRSFlashCardMan</h2>
+                        <p class="text-xl md:text-2xl text-gray-600 mb-8 max-w-2xl mx-auto font-light">Il metodo SRS più leggero e veloce del web.</p>
+                        <p class="text-md text-gray-500 mb-10">Nessuna installazione, gratuito per sempre. Memorizza in pochi secondi.</p>
+                        
+                        <div class="flex flex-col md:flex-row gap-4 justify-center items-center">
+                            <button onclick="showView('auth')" class="w-full md:w-auto px-10 py-4 bg-black text-white text-lg font-bold rounded-lg shadow-xl hover:bg-gray-800 hover:shadow-2xl transition duration-300 transform hover:-translate-y-1">
+                                Inizia Ora / Accedi
+                            </button>
+                            <button onclick="startDemo()" class="w-full md:w-auto px-10 py-4 bg-white text-blue-600 border-2 border-blue-600 text-lg font-bold rounded-lg shadow-md hover:bg-blue-50 transition duration-300 transform hover:-translate-y-1">
+                                🧪 Prova la Demo
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Grid Layout 3 Colonne -->
