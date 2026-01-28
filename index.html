@@ -462,6 +462,14 @@
             currentView = viewName;
             const contentDiv = document.getElementById('app-content');
 
+            // Gestione Navigazione (Nascondi su Landing e Auth se non loggato)
+            const nav = document.querySelector('nav');
+            if (viewName === 'landing') {
+                if (nav) nav.classList.add('hidden');
+            } else if (userId) {
+                if (nav) nav.classList.remove('hidden');
+            }
+
             document.querySelectorAll('nav button').forEach(btn => {
                 const isSelected = btn.id === `nav-${viewName}`;
                 btn.classList.toggle('bg-blue-500', isSelected);
@@ -481,9 +489,9 @@
             });
 
             if (!isAuthReady || userId === null) {
-                // Se non è autenticato, forza la visualizzazione della schermata di autenticazione
-                if (viewName !== 'auth') {
-                    return showView('auth');
+                // Se non è autenticato, permette solo Auth o Landing
+                if (viewName !== 'auth' && viewName !== 'landing') {
+                    return showView('landing');
                 }
             }
 
@@ -497,13 +505,16 @@
                     renderCreateView();
                     break;
                 case 'archive':
-                    renderArchiveView(); // NUOVA VISTA
+                    renderArchiveView();
                     break;
                 case 'stats':
                     loadStats().then(renderStatsView);
                     break;
                 case 'auth':
                     renderAuthView();
+                    break;
+                case 'landing':
+                    renderLandingView();
                     break;
                 default:
                     renderReviewView();
@@ -1106,6 +1117,64 @@
         }
 
 
+        // --- VISTA: LANDING PAGE (Nuova) ---
+
+        function renderLandingView() {
+            const contentDiv = document.getElementById('app-content');
+
+            // Nasconde la navigazione principale quando si è sulla landing page per pulizia
+            const nav = document.querySelector('nav');
+            if (nav) nav.classList.add('hidden');
+
+            contentDiv.innerHTML = `
+                <div class="py-12 px-4 md:px-0 text-center">
+                    <!-- Hero Section Minimized -->
+                    <div class="mb-16">
+                        <h2 class="text-4xl md:text-5xl font-bold text-gray-900 mb-6 tracking-tight">Memorizza. Per sempre.</h2>
+                        <button onclick="showView('auth')" class="px-8 py-3 bg-black text-white text-lg font-bold rounded-none hover:bg-gray-800 transition duration-300">
+                            INIZIA ORA
+                        </button>
+                    </div>
+
+                    <!-- Grid Layout 3 Colonne -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8 max-w-6xl mx-auto text-left">
+                        
+                        <!-- Block 1 -->
+                        <div class="flex flex-col space-y-4 p-6 hover:bg-gray-50 transition duration-300 border-l-2 border-black md:border-l-0 md:border-t-2">
+                            <h3 class="text-3xl md:text-4xl font-bold text-black tracking-wide">ANNOTA</h3>
+                            <p class="text-gray-600 text-lg leading-relaxed">
+                                Salva i tuoi appunti in pochi secondi.
+                                <br><span class="text-sm text-gray-400 mt-2 block">Cattura l'essenziale senza distrazioni.</span>
+                            </p>
+                        </div>
+
+                        <!-- Block 2 -->
+                        <div class="flex flex-col space-y-4 p-6 hover:bg-gray-50 transition duration-300 border-l-2 border-black md:border-l-0 md:border-t-2">
+                            <h3 class="text-3xl md:text-4xl font-bold text-black tracking-wide">RIPASSA</h3>
+                            <p class="text-gray-600 text-lg leading-relaxed">
+                                Solo quando serve davvero.
+                                <br><span class="text-sm text-gray-400 mt-2 block">L'algoritmo SRS ottimizza il tuo tempo.</span>
+                            </p>
+                        </div>
+
+                        <!-- Block 3 -->
+                        <div class="flex flex-col space-y-4 p-6 hover:bg-gray-50 transition duration-300 border-l-2 border-black md:border-l-0 md:border-t-2">
+                            <h3 class="text-3xl md:text-4xl font-bold text-black tracking-wide">CRESCI</h3>
+                            <p class="text-gray-600 text-lg leading-relaxed">
+                                Aumenta le tue conoscenze ogni giorno.
+                                <br><span class="text-sm text-gray-400 mt-2 block">Costruisci una memoria a lungo termine solida.</span>
+                            </p>
+                        </div>
+
+                    </div>
+
+                    <div class="mt-20 pt-10 border-t border-gray-200">
+                        <p class="text-sm text-gray-400">Design Minimalista Estremo &copy; ${new Date().getFullYear()}</p>
+                    </div>
+                </div>
+            `;
+        }
+
         // --- INIZIALIZZAZIONE GLOBALE E AUTENTICAZIONE ---
 
         async function initApp() {
@@ -1121,6 +1190,8 @@
 
             // Listener per lo stato di autenticazione
             firebaseApp.onAuthStateChanged(auth, async (user) => {
+                const nav = document.querySelector('nav');
+
                 if (user) {
                     userId = user.uid;
                     isAuthReady = true;
@@ -1129,6 +1200,9 @@
                     const status = userId ? "Autenticato con Email" : "Non loggato";
                     document.getElementById('user-info').textContent = `Utente ID: ${userId} | Stato: Portabile (Cloud)`;
 
+                    // Mostra navigation quando loggato
+                    if (nav) nav.classList.remove('hidden');
+
                     await loadStats();
                     setupCardListener();
                 } else {
@@ -1136,7 +1210,9 @@
                     isAuthReady = true;
                     isAnonymous = false;
                     document.getElementById('user-info').textContent = "Utente ID: NON LOGGATO";
-                    currentView = 'auth';
+
+                    // Default to Landing Page instead of Auth
+                    currentView = 'landing';
                 }
 
                 showView(currentView);
